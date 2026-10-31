@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x402 Guard Attack Suite</title>
+  <style>
+    :root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; background: #f3f6fa; color: #17243a; }
+    body { max-width: 1040px; margin: 36px auto; padding: 0 20px 40px; }
+    h1 { margin: 0 0 8px; }
+    h2 { margin: 26px 0 12px; }
+    p { line-height: 1.5; }
+    .muted { color: #5a6980; }
+    .banner { background: #edf7f2; border: 1px solid #c9e6d4; border-radius: 10px; padding: 14px 16px; margin: 18px 0; }
+    .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 18px 0; }
+    button { background: #245fe5; border: 0; border-radius: 8px; color: white; cursor: pointer; font-size: 15px; padding: 11px 16px; }
+    button.secondary { background: #e8eef8; color: #24344e; }
+    button:disabled { opacity: .6; cursor: wait; }
+    #status { color: #5a6980; }
+    .scenarios { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+    .scenario, .result, .summary { background: white; border: 1px solid #dce4ef; border-radius: 12px; padding: 16px; }
+    .scenario h3 { margin: 0 0 5px; }
+    .scenario p { min-height: 44px; margin: 8px 0 14px; }
+    .id { color: #55657d; font-family: ui-monospace, monospace; font-size: 13px; }
+    .official { color: #164cae; }
+    .summary { display: flex; flex-wrap: wrap; gap: 10px; }
+    .metric { background: #f4f7fb; border-radius: 8px; padding: 10px 13px; min-width: 150px; }
+    .metric b { display: block; margin-bottom: 4px; }
+    .good { color: #137347; }
+    .bad { color: #b42332; }
+    .neutral { color: #64748b; }
+    .result { margin: 12px 0; }
+    .result-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .result h3 { margin: 0; }
+    .checks { list-style: none; padding: 0; margin: 12px 0; }
+    .checks li { border-top: 1px solid #edf0f5; padding: 9px 2px; line-height: 1.45; }
+    .check-status { display: inline-block; min-width: 54px; font-weight: 700; }
+    details { margin-top: 12px; }
+    pre { overflow: auto; max-height: 480px; background: #111827; border-radius: 9px; color: #e5eefc; padding: 14px; }
+    @media (max-width: 560px) { body { margin-top: 22px; } .scenario p { min-height: auto; } }
+  </style>
+</head>
+<body>
+  <h1>x402 Guard Attack Suite</h1>
+  <p class="muted">Run the shared offers against this server's configured payer-side defense and see exactly what the guard decided.</p>
+  <div class="banner"><b>Dry run only.</b> This page calls <code>POST /evaluate</code>. The guard checks each offer and returns a decision. No signer, wallet key, payment retry, or settlement is involved.</div>
+
+  <h2>Shared scenarios</h2>
+  <div id="scenarios" class="scenarios"><p class="muted">Loading scenarios…</p></div>
+  <div class="toolbar">
+    <button id="run-all">Run full suite</button>
+    <span id="status" role="status">Ready</span>
+  </div>
+
+  <h2>Suite summary</h2>
+  <section id="summary" class="summary" aria-live="polite"><span class="muted">Run a scenario to see the result.</span></section>
+
+  <h2>What happened</h2>
+  <section id="results" aria-live="polite"><p class="muted">Each run will show the expected result, actual decision, checks, and denial reasons here.</p></section>
+
+  <script>
+    const scenarioRoot = document.querySelector('#scenarios');
+    const resultsRoot = document.querySelector('#results');
+    const summaryRoot = document.querySelector('#summary');
+    const runAllButton = document.querySelector('#run-all');
+    const statusText = document.querySelector('#status');
+    let scenarios = [];
+    let results = new Map();
+
+    function element(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    async function loadScenarios() {
+      try {
+        const response = await fetch('/cross-team/scenarios');
+        if (!response.ok) throw new Error(`Scenario list returned HTTP ${response.status}`);
+        const data = await response.json();
+        scenarios = data.scenarios;
+        scenarioRoot.replaceChildren();
+        for (const scenario of scenarios) {
+          const card = element('article', 'scenario');
+          const title = element('h3', scenario.attack_class ? 'official' : '', scenario.title);
+          const id = element('div', 'id', scenario.scenario_id);
+          const description = element('p', 'muted', scenario.description);
+          const expected = element('p', '', `Expected: ${scenario.expected_authorized ? 'ALLOW' : 'DENY'}`);
+          const button = element('button', 'secondary', 'Run scenario');
+          button.addEventListener('click', () => runScenario(scenario));
+          card.append(title, id, description, expected, button);
+          scenarioRoot.append(card);
+        }
+      } catch (error) {
+        scenarioRoot.replaceChildren(element('p', 'bad', `Could not load scenarios: ${error.message}`));
+      }
+    }
+
+    async function runScenario(scenario) {
+      statusText.textContent = `Running ${scenario.scenario_id}…`;
+      try {
+        const response = await fetch('/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario_id: scenario.scenario_id, offer: scenario.offer }),
+        });
+        const decision = await response.json();
+        if (!response.ok) throw new Error(decision.error || `HTTP ${response.status}`);
+        if (decision.signing_attempted !== false || decision.payment_submitted !== false) {
+          throw new Error('The endpoint violated the dry-run contract.');
+        }
+        results.set(scenario.scenario_id, { scenario, decision, error: null });
+      } catch (error) {
+        results.set(scenario.scenario_id, { scenario, decision: null, error: error.message });
+      }
+      renderResults();
+      statusText.textContent = `${scenario.scenario_id} finished`;
+    }
+
+    async function runFullSuite() {
+      runAllButton.disabled = true;
+      statusText.textContent = 'Running all scenarios…';
+      results = new Map();
+      for (const scenario of scenarios) await runScenario(scenario);
+      runAllButton.disabled = false;
+      statusText.textContent = 'Full suite finished';
+    }
+
+    function renderResults() {
+      const ordered = scenarios.filter(item => results.has(item.scenario_id)).map(item => results.get(item.scenario_id));
+      summaryRoot.replaceChildren();
+      const getActual = id => results.get(id)?.decision?.authorized;
+      const baseline = getActual('baseline_valid');
+      const overpayment = getActual('overpayment');
+      const wrongParty = getActual('wrong_party');
+      const metrics = [
+        ['Baseline', baseline === undefined ? 'Not run' : (baseline ? 'Passed · allowed' : 'Failed · denied'), baseline === undefined ? 'neutral' : (baseline ? 'good' : 'bad')],
+        ['Overpayment', overpayment === undefined ? 'Not run' : (!overpayment ? 'Blocked' : 'Attack got through'), overpayment === undefined ? 'neutral' : (!overpayment ? 'good' : 'bad')],
+        ['Wrong party', wrongParty === undefined ? 'Not run' : (!wrongParty ? 'Blocked' : 'Attack got through'), wrongParty === undefined ? 'neutral' : (!wrongParty ? 'good' : 'bad')],
+        ['Signer / payment', 'Not called · not sent', 'good'],
+      ];
+      for (const [label, value, color] of metrics) {
+        const box = element('div', 'metric');
+        box.append(element('b', '', label), element('span', color, value));
+        summaryRoot.append(box);
+      }
+
+      resultsRoot.replaceChildren();
+      if (!ordered.length) {
+        resultsRoot.append(element('p', 'muted', 'Run a scenario to see the result.'));
+        return;
+      }
+      for (const entry of ordered) {
+        const { scenario, decision, error } = entry;
+        const actual = decision ? (decision.authorized ? 'ALLOW' : 'DENY') : 'ERROR';
+        const correct = decision && decision.authorized === scenario.expected_authorized;
+        const attackSucceeded = Boolean(scenario.attack_class && !scenario.expected_authorized && decision?.authorized);
+        const card = element('article', 'result');
+        const head = element('div', 'result-head');
+        head.append(
+          element('h3', '', `${scenario.title} · ${scenario.scenario_id}`),
+          element('b', correct ? 'good' : 'bad', error ? 'Could not evaluate' : (attackSucceeded ? 'Attack got through' : (correct ? 'Expected result' : 'Unexpected result'))),
+        );
+        card.append(head, element('p', 'muted', `Expected: ${scenario.expected_authorized ? 'ALLOW' : 'DENY'} · Actual: ${actual}`));
+        if (error) card.append(element('p', 'bad', error));
+        if (decision) {
+          const list = element('ul', 'checks');
+          for (const check of decision.checks || []) {
+            const row = element('li');
+            row.append(
+              element('span', `check-status ${check.passed ? 'good' : 'bad'}`, check.passed ? 'PASS' : 'FAIL'),
+              element('code', '', `${check.name}: `),
+              document.createTextNode(check.detail),
+            );
+            list.append(row);
+          }
+          card.append(list);
+          if (decision.reasons?.length) {
+            card.append(element('b', '', 'Why it was denied'));
+            const reasons = element('ul', 'checks');
+            for (const reason of decision.reasons) reasons.append(element('li', '', reason));
+            card.append(reasons);
+          }
+          card.append(element('p', 'muted', `Signer called: ${decision.signing_attempted ? 'yes' : 'no'} · Payment submitted: ${decision.payment_submitted ? 'yes' : 'no'}`));
+          const details = element('details');
+          details.append(element('summary', '', 'Decision JSON'));
+          const pre = element('pre', '', JSON.stringify(decision, null, 2));
+          details.append(pre);
+          card.append(details);
+        }
+        resultsRoot.append(card);
+      }
+    }
+
+    runAllButton.addEventListener('click', runFullSuite);
+    loadScenarios();
+  </script>
+</body>
+</html>

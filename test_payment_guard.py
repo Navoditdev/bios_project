@@ -83,6 +83,19 @@ class PaymentGuardTests(unittest.TestCase):
         self.assertFalse(decision.authorized)
         self.assertIn("valid_before", {check.name for check in decision.checks if not check.passed})
 
+    def test_authorization_expiring_in_365_days_is_denied(self):
+        guard = make_guard()
+        payment = valid_mock_payment("http://localhost:8402/paid")
+        payment["payload"]["authorization"]["validBefore"] = str(
+            int(time.time()) + 365 * 24 * 60 * 60
+        )
+
+        decision = guard.authorize(payment, "http://localhost:8402/paid")
+        self.assertFalse(decision.authorized)
+        failed = {check.name for check in decision.checks if not check.passed}
+        self.assertIn("valid_before", failed)
+        self.assertIn("exceeds the allowed timeout", " ".join(decision.reasons))
+
 
 if __name__ == "__main__":
     unittest.main()

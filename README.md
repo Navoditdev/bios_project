@@ -63,6 +63,8 @@ Relevant files:
 - `client.py` — parses and structurally validates the x402 challenge.
 - `attack_suite.py`, `cross_team_test.py`, and `CROSS_TEAM_TESTING.md` — stable
   shared scenarios, a decision-only peer API, and the cross-team CLI workflow.
+- `cross_team_gui.html` — browser view for running the suite against the local
+  payer guard and reviewing checks and outcomes.
 - `test_payer_agent.py`, `test_payment_guard.py`, `test_server.py`, and
   `test_cross_team.py` — tests for policy, the resource-server guard, local
   protocol flow, and the cross-team dry-run API/runner.
@@ -130,6 +132,12 @@ collapsible **Technical details (JSON)** section. `/health` reports whether the
 server guard is active.
 
 **Local demo:** [http://127.0.0.1:8402/demo](http://127.0.0.1:8402/demo)
+
+Open the shared attack-suite GUI at
+[http://127.0.0.1:8402/cross-team](http://127.0.0.1:8402/cross-team). Click
+**Run full suite** to exercise the local payer guard and review the expected
+and actual decisions, failed checks, and denial reasons. This page uses the
+decision-only endpoint and does not sign or submit payments.
 
 ## Cross-team dry-run guard evaluation
 

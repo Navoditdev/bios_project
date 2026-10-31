@@ -107,6 +107,18 @@ class X402ServerTests(unittest.TestCase):
         challenge = self.decode(headers["PAYMENT-REQUIRED"])
         self.assertIn("amount", challenge["error"])
 
+    def test_year_long_authorization_is_rejected_over_http(self):
+        payment = json.loads(base64.b64decode(self.demo_payment()))
+        payment["payload"]["authorization"]["validBefore"] = str(
+            int(time.time()) + 365 * 24 * 60 * 60
+        )
+        header = base64.b64encode(json.dumps(payment).encode()).decode()
+
+        status, headers, _ = self.request(headers={"PAYMENT-SIGNATURE": header})
+        self.assertEqual(status, 402)
+        challenge = self.decode(headers["PAYMENT-REQUIRED"])
+        self.assertIn("timeout", challenge["error"])
+
     def test_malformed_resource_is_challenged_without_server_error(self):
         payment = json.loads(base64.b64decode(self.demo_payment()))
         payment["resource"] = None

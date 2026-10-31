@@ -10,11 +10,13 @@ import base64
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from payment_guard import GuardConfig, PaymentGuard
 from payer_agent import DeterministicPaymentAgent
+from attack_suite import offer_for_scenario, scenario_catalog
 
 
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -289,6 +291,16 @@ class X402Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/cross-team":
+            gui_path = Path(__file__).with_name("cross_team_gui.html")
+            self.send_html(gui_path.read_text(encoding="utf-8"))
+            return
+        if parsed.path == "/cross-team/scenarios":
+            scenarios = scenario_catalog()
+            for scenario in scenarios:
+                scenario["offer"] = offer_for_scenario(scenario["scenario_id"])
+            self.send_json(200, {"scenarios": scenarios})
+            return
         if parsed.path == "/demo":
             self.send_html(DEMO_HTML)
             return

@@ -75,7 +75,8 @@ class DryRunEndpointTests(unittest.TestCase):
         cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.X402Handler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
-        cls.endpoint = f"http://127.0.0.1:{cls.httpd.server_port}/evaluate"
+        cls.base_url = f"http://127.0.0.1:{cls.httpd.server_port}"
+        cls.endpoint = f"{cls.base_url}/evaluate"
 
     @classmethod
     def tearDownClass(cls):
@@ -113,6 +114,21 @@ class DryRunEndpointTests(unittest.TestCase):
                     self.assertFalse(result["signing_attempted"])
                     self.assertFalse(result["payment_submitted"])
             signer.assert_not_called()
+
+    def test_gui_and_scenario_manifest_are_served(self):
+        with urlopen(self.base_url + "/cross-team", timeout=2) as response:
+            html = response.read().decode("utf-8")
+        self.assertIn("x402 Guard Attack Suite", html)
+        self.assertIn("What happened", html)
+        self.assertIn("Run full suite", html)
+
+        with urlopen(self.base_url + "/cross-team/scenarios", timeout=2) as response:
+            manifest = json.load(response)
+        self.assertEqual(
+            [item["scenario_id"] for item in manifest["scenarios"]],
+            [scenario.scenario_id for scenario in SCENARIOS],
+        )
+        self.assertTrue(all(isinstance(item["offer"], dict) for item in manifest["scenarios"]))
 
     def test_endpoint_rejects_untrusted_policy_fields(self):
         status, result = self.post(
