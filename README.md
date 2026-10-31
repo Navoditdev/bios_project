@@ -61,8 +61,11 @@ Relevant files:
 - `mock_pay.py` — official x402 SDK flow with a fake signer and offer-tampering
   scenarios.
 - `client.py` — parses and structurally validates the x402 challenge.
-- `test_payer_agent.py`, `test_payment_guard.py`, `test_server.py` — tests for
-  the payer policy, server guard, and local protocol flow.
+- `attack_suite.py`, `cross_team_test.py`, and `CROSS_TEAM_TESTING.md` — stable
+  shared scenarios, a decision-only peer API, and the cross-team CLI workflow.
+- `test_payer_agent.py`, `test_payment_guard.py`, `test_server.py`, and
+  `test_cross_team.py` — tests for policy, the resource-server guard, local
+  protocol flow, and the cross-team dry-run API/runner.
 
 ### Guidance for future changes
 
@@ -127,6 +130,27 @@ collapsible **Technical details (JSON)** section. `/health` reports whether the
 server guard is active.
 
 **Local demo:** [http://127.0.0.1:8402/demo](http://127.0.0.1:8402/demo)
+
+## Cross-team dry-run guard evaluation
+
+With the local server running, its decision-only peer endpoint is
+`POST http://127.0.0.1:8402/evaluate`. Run the shared suite against the
+configured local payer policy with:
+
+```sh
+.venv/bin/python cross_team_test.py --local
+```
+
+To run the same suite against another team's endpoint:
+
+```sh
+.venv/bin/python cross_team_test.py --endpoint http://PEER_HOST:PORT/evaluate
+```
+
+The runner sends only a scenario ID and x402 offer. It never requests or sends
+a wallet key and does not call a signer or submit payment. See
+[CROSS_TEAM_TESTING.md](CROSS_TEAM_TESTING.md) for shared policy values, JSON
+request/response shapes, expected scenarios, and error behavior.
 
 ## How the mock signing works
 

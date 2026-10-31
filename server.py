@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from payment_guard import GuardConfig, PaymentGuard
+from payer_agent import DeterministicPaymentAgent
 
 
 HOST = os.environ.get("HOST", "127.0.0.1")
@@ -26,6 +27,10 @@ DESCRIPTION = "Demo premium resource"
 # Must match mock_pay.MOCK_SIGNATURE_HEX. It is a marker, never a valid ECDSA signature.
 MOCK_SIGNATURE = "0x" + b"MOCK-ONLY-NOT-A-REAL-ECDSA-SIGNATURE".hex()
 MOCK_PAYER = "0x857b06519E91e3A54538791bDbb0E22373e36b66"
+CROSS_TEAM_RESOURCE_URL = "https://cross-team.invalid/protected-resource"
+# Decision-only agent: intentionally has no signer and uses server-configured
+# defaults. Request bodies can supply offers, never policy settings.
+CROSS_TEAM_AGENT = DeterministicPaymentAgent()
 
 # This one guard instance remembers used nonces for the lifetime of this
 # process. It is deliberately reset whenever you restart the local demo.
@@ -399,6 +404,54 @@ class X402Handler(BaseHTTPRequestHandler):
             200,
             {"data": "This is the x402 mock-paid demo resource.", "paymentMode": "mock"},
             {"PAYMENT-RESPONSE": encode_header(receipt)},
+        )
+
+    def do_POST(self) -> None:
+        """Expose an evaluation-only API for cross-team guard comparisons."""
+        if urlparse(self.path).path != "/evaluate":
+            self.send_json(404, {"error": "not_found"})
+            return
+        if self.headers.get_content_type() != "application/json":
+            self.send_json(415, {"error": "content_type_must_be_application_json"})
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            self.send_json(400, {"error": "invalid_content_length"})
+            return
+        if not 0 <= content_length <= 1_000_000:
+            self.send_json(413, {"error": "request_body_too_large_or_empty"})
+            return
+        try:
+            payload = json.loads(self.rfile.read(content_length))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_json(400, {"error": "request_body_must_be_valid_json"})
+            return
+        if not isinstance(payload, dict) or set(payload) != {"scenario_id", "offer"}:
+            self.send_json(400, {"error": "request_must_contain_only_scenario_id_and_offer"})
+            return
+        scenario_id = payload.get("scenario_id")
+        if not isinstance(scenario_id, str) or not scenario_id or len(scenario_id) > 80:
+            self.send_json(400, {"error": "scenario_id_must_be_a_non_empty_string"})
+            return
+
+        # The offer is untrusted. Even malformed offer values are evaluated
+        # against fixed trusted policy and return a deny decision. This route
+        # never calls the SDK, signer, resource payment handler, or settlement.
+        decision = CROSS_TEAM_AGENT.evaluate(payload["offer"], CROSS_TEAM_RESOURCE_URL)
+        self.send_json(
+            200,
+            {
+                "scenario_id": scenario_id,
+                "authorized": decision.authorized,
+                "checks": [
+                    {"name": check.name, "passed": check.passed, "detail": check.detail}
+                    for check in decision.checks
+                ],
+                "reasons": decision.reasons,
+                "signing_attempted": False,
+                "payment_submitted": False,
+            },
         )
 
     def challenge(self, resource_url: str, error: str) -> None:
