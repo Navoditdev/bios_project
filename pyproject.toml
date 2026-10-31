@@ -1,0 +1,8 @@
+[project]
+name = "bios-project-x402-prototype"
+version = "0.1.0"
+description = "Local x402 HTTP prototype with an official SDK mock payer"
+requires-python = ">=3.10"
+dependencies = [
+    "x402[evm]==2.26.0",
+]
