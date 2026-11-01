@@ -18,6 +18,8 @@ import uuid
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from behavior_risk import BehaviorAssessment, BehaviorRiskMonitor
+
 
 POLICY_AMOUNT_CEILING = 10_000
 POLICY_NETWORK = "eip155:84532"
@@ -218,11 +220,11 @@ class InMemorySpendLedger:
 
 
 class DeterministicPaymentAgent:
-    """Evaluate 402 requirements using fixed policy, then optionally sign.
+    """Score behavior, enforce fixed payer policy, then optionally sign.
 
-    Decision-making is deterministic: the same offer and policy always produce
-    the same ALLOW/DENY checks. There is no model call, random choice, or
-    network-provided policy. SDK payload construction only happens after ALLOW.
+    Model scoring is deterministic for a given history. The offer never
+    supplies payer policy, and SDK payload construction only happens after all
+    behavior, policy, and budget checks allow the payment.
     """
 
     def __init__(
@@ -230,11 +232,16 @@ class DeterministicPaymentAgent:
         policy: AgentPolicy | None = None,
         signer: Any | None = None,
         ledger: InMemorySpendLedger | None = None,
+        behavior_monitor: BehaviorRiskMonitor | None = None,
     ) -> None:
         self.policy = AgentPolicy() if policy is None else policy
         self.signer = signer
         self.ledger = InMemorySpendLedger() if ledger is None else ledger
+        self.behavior_monitor = behavior_monitor
         self.last_reservation_id: str | None = None
+        self.last_behavior_event_id: str | None = None
+        self.last_behavior_features: dict[str, float] | None = None
+        self.last_behavior_assessment: BehaviorAssessment | None = None
 
     def evaluate(self, requirements: Any, requested_resource_url: str) -> PayerDecision:
         """Compare a parsed, untrusted 402 object with the agent's own policy."""
@@ -407,9 +414,35 @@ class DeterministicPaymentAgent:
         requested_resource_url: str,
         reservation_id: str | None = None,
     ) -> tuple[PayerDecision, str | None]:
-        """Evaluate an offer and atomically reserve its amount against budgets."""
+        """Run model and policy checks, then atomically reserve budget."""
+        self.last_behavior_event_id = None
+        self.last_behavior_features = None
+        self.last_behavior_assessment = None
+        assessment = None
+        if self.behavior_monitor is not None:
+            raw_policy = self.policy if isinstance(self.policy, AgentPolicy) else AgentPolicy()
+            safe_limit = lambda value, fallback: value if type(value) is int and value > 0 else fallback
+            assessment, self.last_behavior_features = self.behavior_monitor.inspect_attempt(
+                requirements,
+                max_amount=safe_limit(raw_policy.max_amount_atomic, 10_000),
+                hourly_budget=safe_limit(raw_policy.rolling_hour_budget_atomic, 10_000),
+                daily_budget=safe_limit(raw_policy.rolling_day_budget_atomic, 30_000),
+            )
+            self.last_behavior_assessment = assessment
+            self.last_behavior_event_id = assessment.event_id
+
         decision = self.evaluate(requirements, requested_resource_url)
+        if assessment is not None:
+            anomaly_check = PolicyCheck("anomaly_risk", not assessment.blocked, assessment.detail)
+            decision = PayerDecision(
+                authorized=decision.authorized and not assessment.blocked,
+                checks=decision.checks + (anomaly_check,),
+                policy=decision.policy,
+            )
         if not decision.authorized:
+            if self.behavior_monitor is not None:
+                outcome = "denied_anomaly" if assessment and assessment.blocked else "denied_policy"
+                self.behavior_monitor.record_outcome(self.last_behavior_event_id, outcome)
             return decision, None
         try:
             amount = self._parse_atomic_amount(requirements["accepts"][0]["amount"])
@@ -421,6 +454,8 @@ class DeterministicPaymentAgent:
                 False,
                 "Could not reserve malformed payment amount.",
             )
+            if self.behavior_monitor is not None:
+                self.behavior_monitor.record_outcome(self.last_behavior_event_id, "denied_policy")
             return PayerDecision(False, decision.checks + (check,), decision.policy), None
         policy = self.policy
         key, detail = self.ledger.reserve(
@@ -430,6 +465,11 @@ class DeterministicPaymentAgent:
             reservation_id,
         )
         budget_check = PolicyCheck("rolling_budget", key is not None, detail)
+        if self.behavior_monitor is not None:
+            self.behavior_monitor.record_outcome(
+                self.last_behavior_event_id,
+                "reserved" if key is not None else "denied_budget",
+            )
         return (
             PayerDecision(key is not None, decision.checks + (budget_check,), decision.policy),
             key,
@@ -482,6 +522,8 @@ class DeterministicPaymentAgent:
         if self.signer is None:
             if reservation_id:
                 self.ledger.release(reservation_id)
+            if self.behavior_monitor is not None:
+                self.behavior_monitor.record_outcome(self.last_behavior_event_id, "denied_no_signer")
             blocked = PayerDecision(
                 authorized=False,
                 checks=decision.checks
@@ -508,6 +550,8 @@ class DeterministicPaymentAgent:
         except Exception:
             if reservation_id:
                 self.ledger.release(reservation_id)
+            if self.behavior_monitor is not None:
+                self.behavior_monitor.record_outcome(self.last_behavior_event_id, "denied_sign_failed")
             raise
         # The caller settles or releases this reservation after submission.
         self.last_reservation_id = reservation_id

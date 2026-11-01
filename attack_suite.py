@@ -56,6 +56,13 @@ OFFICIAL_SCENARIOS = (
 
 SUPPORTING_SCENARIOS = (
     Scenario(
+        "small_payment_flood",
+        "Small-payment flood",
+        False,
+        "behavioral_anomaly",
+        "Eight rapid 1,000-unit calls total 8,000 units, below the hourly spend cap; the XGBoost behavior monitor should detect the burst.",
+    ),
+    Scenario(
         "malformed_amount",
         "Malformed amount",
         False,
@@ -113,6 +120,9 @@ def offer_for_scenario(scenario_id: str) -> dict[str, Any] | list[dict[str, Any]
         offer["accepts"].append(deepcopy(offer["accepts"][0]))
     elif scenario_id == "multiple_calls":
         return [deepcopy(offer) for _ in range(3)]
+    elif scenario_id == "small_payment_flood":
+        offer["accepts"][0]["amount"] = "1000"
+        return [deepcopy(offer) for _ in range(8)]
     return offer
 
 

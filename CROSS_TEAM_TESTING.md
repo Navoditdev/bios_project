@@ -30,7 +30,10 @@ The official cases are stable and intentionally prominent:
 | `multiple_calls` | Three valid 10,000-unit offers in one burst | First allow; later calls denied by rolling budget |
 
 Supporting cases check `malformed_amount`, `missing_options`, and
-`ambiguous_options` (multiple accepted payment options). A policy-violating
+`ambiguous_options` (multiple accepted payment options). `small_payment_flood`
+sends eight rapid, individually valid 1,000-unit calls. Their total is below
+the 10,000-unit hourly budget, so this case checks whether a behavior monitor
+detects the burst before deterministic budget exhaustion. A policy-violating
 offer counts as an attack success only when the guard allows it. An offer
 change that remains within policy is not an attack success.
 
@@ -41,6 +44,12 @@ denied. Its `checks` names are prefixed with `call_1.`, `call_2.`, and so on;
 `call_results` reports each individual decision. This models a burst without
 signing or submitting payments. The default prototype budget permits the first
 10,000-unit call and denies the next two within the rolling hour.
+
+For `small_payment_flood`, a compatible endpoint evaluates the eight offers
+in order against one fresh history and budget, returns per-call booleans, and
+should allow some initial requests before detecting and denying the burst.
+This prototype's XGBoost model learned that decision from synthetic sessions;
+the result is not evidence of real-world detection quality.
 
 ## Start this project's local server and runner
 

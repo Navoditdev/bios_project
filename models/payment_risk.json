@@ -1,0 +1,42 @@
+{
+  "model_type": "XGBoost binary classifier",
+  "xgboost_version": "3.0.5",
+  "feature_schema_version": 1,
+  "feature_names": [
+    "amount_ratio",
+    "amount_valid",
+    "over_per_payment_limit",
+    "calls_30s",
+    "calls_5m",
+    "calls_1h",
+    "calls_24h",
+    "units_5m_hour_budget_ratio",
+    "units_1h_hour_budget_ratio",
+    "units_24h_day_budget_ratio",
+    "near_cap_calls_10m",
+    "near_cap_calls_24h",
+    "denials_5m",
+    "unique_resources_1h",
+    "resource_is_new",
+    "same_amount_calls_5m",
+    "seconds_since_last_call"
+  ],
+  "risk_threshold": 0.861901581287384,
+  "best_iteration": 116,
+  "threshold_method": "maximum calibration recall at <=1% synthetic benign false-positive rate",
+  "test_metrics": {
+    "precision": 1.0,
+    "recall": 0.9980806142034548,
+    "false_positive_rate": 0.0,
+    "true_positives": 520,
+    "false_positives": 0,
+    "false_negatives": 1
+  },
+  "sessions_per_kind": 400,
+  "rows": 19494,
+  "seed": 42,
+  "training_data": "synthetic only; not a real-world fraud probability",
+  "trained_at_utc": "2026-11-01T05:28:55.580893+00:00",
+  "model_file": "payment_risk.ubj",
+  "training_csv": "synthetic_behavior_training.csv"
+}

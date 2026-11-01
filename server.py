@@ -15,6 +15,11 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from attack_suite import offer_for_scenario, scenario_catalog
+from behavior_lab import (
+    run_scenario as run_behavior_scenario,
+    scenario_catalog as behavior_scenario_catalog,
+)
+from behavior_risk import BehaviorRiskMonitor
 from payment_guard import GuardConfig, PaymentGuard
 from payer_agent import DeterministicPaymentAgent
 
@@ -139,6 +144,9 @@ class X402Handler(BaseHTTPRequestHandler):
             for scenario in scenarios:
                 scenario["offer"] = offer_for_scenario(scenario["scenario_id"])
             self.send_json(200, {"scenarios": scenarios})
+            return
+        if parsed.path == "/behavior-lab/scenarios":
+            self.send_json(200, {"scenarios": behavior_scenario_catalog()})
             return
         if parsed.path == "/demo":
             self.send_html_file("demo.html")
@@ -318,7 +326,8 @@ class X402Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Expose an evaluation-only API for cross-team guard comparisons."""
-        if urlparse(self.path).path != "/evaluate":
+        route = urlparse(self.path).path
+        if route not in {"/evaluate", "/behavior-lab/run"}:
             self.send_json(404, {"error": "not_found"})
             return
         if self.headers.get_content_type() != "application/json":
@@ -337,29 +346,43 @@ class X402Handler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             self.send_json(400, {"error": "request_body_must_be_valid_json"})
             return
-        if not isinstance(payload, dict) or set(payload) != {"scenario_id", "offer"}:
-            self.send_json(400, {"error": "request_must_contain_only_scenario_id_and_offer"})
+        expected_keys = {"scenario_id"} if route == "/behavior-lab/run" else {"scenario_id", "offer"}
+        if not isinstance(payload, dict) or set(payload) != expected_keys:
+            error = (
+                "behavior_run_requires_only_scenario_id"
+                if route == "/behavior-lab/run"
+                else "request_must_contain_only_scenario_id_and_offer"
+            )
+            self.send_json(400, {"error": error})
             return
         scenario_id = payload.get("scenario_id")
         if not isinstance(scenario_id, str) or not scenario_id or len(scenario_id) > 80:
             self.send_json(400, {"error": "scenario_id_must_be_a_non_empty_string"})
             return
+        if route == "/behavior-lab/run":
+            try:
+                self.send_json(200, run_behavior_scenario(scenario_id))
+            except ValueError as error:
+                self.send_json(400, {"error": str(error)})
+            return
 
         # The offer is untrusted. Even malformed offer values are evaluated
         # against fixed trusted policy and return a deny decision. This route
         # never calls the SDK, signer, resource payment handler, or settlement.
-        if scenario_id == "multiple_calls":
+        if scenario_id in {"multiple_calls", "small_payment_flood"}:
             offers = payload["offer"]
             if not isinstance(offers, list) or not offers or len(offers) > 20:
-                self.send_json(400, {"error": "multiple_calls_requires_one_to_twenty_offers"})
+                self.send_json(400, {"error": "scenario_requires_one_to_twenty_offers"})
                 return
             # Use a fresh ledger per scenario run, then evaluate each call
             # against the same rolling budget to model a burst of requests.
-            agent = DeterministicPaymentAgent()
+            monitor = BehaviorRiskMonitor(database_path=":memory:")
+            agent = DeterministicPaymentAgent(behavior_monitor=monitor)
             decisions = [
                 agent.authorize_and_reserve(offer, CROSS_TEAM_RESOURCE_URL)[0]
                 for offer in offers
             ]
+            monitor.close()
             checks = [
                 {
                     "name": f"call_{index}.{check.name}",

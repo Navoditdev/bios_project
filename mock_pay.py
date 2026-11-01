@@ -13,6 +13,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from client import parse_payment_requirements
+from behavior_risk import BehaviorRiskMonitor
 from payer_agent import DeterministicPaymentAgent, InMemorySpendLedger
 from x402.http import encode_payment_signature_header
 
@@ -22,6 +23,7 @@ MOCK_SIGNATURE_BYTES = b"MOCK-ONLY-NOT-A-REAL-ECDSA-SIGNATURE"
 MOCK_SIGNATURE_HEX = "0x" + MOCK_SIGNATURE_BYTES.hex()
 # Share one prototype ledger across all mock payer calls in this process.
 MOCK_PAYER_LEDGER = InMemorySpendLedger()
+MOCK_BEHAVIOR_MONITOR = BehaviorRiskMonitor()
 
 
 def _json_safe(value: Any) -> Any:
@@ -103,7 +105,11 @@ def perform_mock_payment(
 
     signer = MockEvmSigner()
     signer.attack = {"field": attack_field, "value": attack_value} if attack_field else None
-    agent = DeterministicPaymentAgent(signer=signer, ledger=MOCK_PAYER_LEDGER)
+    agent = DeterministicPaymentAgent(
+        signer=signer,
+        ledger=MOCK_PAYER_LEDGER,
+        behavior_monitor=MOCK_BEHAVIOR_MONITOR,
+    )
     challenge_header = headers.get("PAYMENT-REQUIRED")
     if not challenge_header:
         signer.payer_decision = agent.deny_malformed_offer(
@@ -176,12 +182,15 @@ def perform_mock_payment(
 
     # A retry is only possible after payer policy allows and SDK signing runs.
     signer.retry_sent = True
+    MOCK_BEHAVIOR_MONITOR.record_outcome(agent.last_behavior_event_id, "submitted")
     status, response_headers, body = _request(url, payment_header)
     if agent.last_reservation_id:
         if status == 200:
             agent.ledger.settle(agent.last_reservation_id)
+            MOCK_BEHAVIOR_MONITOR.record_outcome(agent.last_behavior_event_id, "settled_mock")
         elif status == 402:
             agent.ledger.release(agent.last_reservation_id)
+            MOCK_BEHAVIOR_MONITOR.record_outcome(agent.last_behavior_event_id, "denied_server")
     signer.server_guard_evaluated = True
     response_json = json.loads(body)
     printable_headers = {

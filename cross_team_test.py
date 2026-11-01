@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -14,17 +16,20 @@ from attack_suite import (
     SCENARIOS,
     offer_for_scenario,
 )
+from behavior_risk import BehaviorRiskMonitor
 from payer_agent import DeterministicPaymentAgent
 
 
 def evaluate_local(scenario_id: str, offer: Any) -> dict[str, Any]:
     """Evaluate against this process's trusted default policy, without signing."""
-    agent = DeterministicPaymentAgent()  # No signer is supplied or instantiated.
-    if scenario_id == "multiple_calls" and isinstance(offer, list):
+    if scenario_id in {"multiple_calls", "small_payment_flood"} and isinstance(offer, list):
+        monitor = BehaviorRiskMonitor(database_path=":memory:")
+        agent = DeterministicPaymentAgent(behavior_monitor=monitor)
         call_decisions = [
             agent.authorize_and_reserve(call, RESOURCE_URL)[0]
             for call in offer
         ]
+        monitor.close()
         checks = [
             {
                 "name": f"call_{index}.{check.name}",
@@ -44,6 +49,7 @@ def evaluate_local(scenario_id: str, offer: Any) -> dict[str, Any]:
             "signing_attempted": False,
             "payment_submitted": False,
         }
+    agent = DeterministicPaymentAgent()  # No signer is supplied or instantiated.
     decision = agent.evaluate(offer, RESOURCE_URL)
     return {
         "scenario_id": scenario_id,
@@ -114,7 +120,7 @@ def evaluate_peer(
             raise RuntimeError(f"peer response is missing boolean '{flag}'")
         if result[flag]:
             raise RuntimeError(f"peer dry-run violated contract: {flag} must be false")
-    if scenario_id == "multiple_calls":
+    if scenario_id in {"multiple_calls", "small_payment_flood"}:
         call_results = result.get("call_results")
         if (
             not isinstance(call_results, list)
@@ -131,7 +137,11 @@ def evaluate_peer(
     return result
 
 
-def run_suite(endpoint: str | None = None, timeout: float = 5.0) -> dict[str, Any]:
+def run_suite(
+    endpoint: str | None = None,
+    timeout: float = 5.0,
+    on_result: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     """Run all fixed fixtures locally or against a peer HTTP evaluation API."""
     results: list[dict[str, Any]] = []
     for scenario in SCENARIOS:
@@ -163,9 +173,17 @@ def run_suite(endpoint: str | None = None, timeout: float = 5.0) -> dict[str, An
             result["signing_attempted"] = decision["signing_attempted"]
             result["payment_submitted"] = decision["payment_submitted"]
             result["passed"] = decision["authorized"] is scenario.expected_authorized
-            if scenario.scenario_id == "multiple_calls":
+            if scenario.scenario_id in {"multiple_calls", "small_payment_flood"}:
                 result["call_results"] = decision["call_results"]
-                result["passed"] = decision["call_results"] == [True, False, False]
+                if scenario.scenario_id == "multiple_calls":
+                    result["passed"] = decision["call_results"] == [True, False, False]
+                else:
+                    calls = decision["call_results"]
+                    result["passed"] = (
+                        decision["authorized"] is False
+                        and any(calls)
+                        and any(not allowed for allowed in calls)
+                    )
             result["attack_succeeded"] = bool(
                 scenario.attack_class
                 and scenario.expected_authorized is False
@@ -177,6 +195,8 @@ def run_suite(endpoint: str | None = None, timeout: float = 5.0) -> dict[str, An
         except Exception as error:
             result["error"] = str(error)
         results.append(result)
+        if on_result is not None:
+            on_result(result)
 
     baseline = next(result for result in results if result["scenario_id"] == "baseline_valid")
     attacks = [result for result in results if result["attack_class"]]
@@ -201,10 +221,41 @@ def run_suite(endpoint: str | None = None, timeout: float = 5.0) -> dict[str, An
                 for r in attacks
                 if r["scenario_id"] == "multiple_calls"
             ),
+            "small_payment_flood_detected": next(
+                r["passed"]
+                for r in attacks
+                if r["scenario_id"] == "small_payment_flood"
+            ),
             "attacks_succeeded": [r["scenario_id"] for r in attacks if r["attack_succeeded"]],
             "all_scenarios_passed": all(result["passed"] for result in results),
         },
     }
+
+
+def print_demo_result(result: dict[str, Any], verbose: bool = False) -> None:
+    """Print one completed evaluation; outcomes always come from the guard."""
+    status = "ERROR" if result["error"] else ("PASS" if result["passed"] else "FAIL")
+    expected = "ALLOW" if result["expected_authorized"] else "DENY"
+    actual = (result["actual"] or "ERROR").upper()
+    print(f"\n[{status}] {result['title']}", flush=True)
+    print(f"  Expected: {expected} | Actual: {actual}", flush=True)
+    if result["error"]:
+        print(f"  Error: {result['error']}", flush=True)
+        return
+    if "call_results" in result:
+        calls = " -> ".join("ALLOW" if allowed else "DENY" for allowed in result["call_results"])
+        print(f"  Calls: {calls}", flush=True)
+    checks = result["checks"]
+    failed = [check for check in checks if not check["passed"]]
+    print(f"  Checks: {sum(check['passed'] for check in checks)}/{len(checks)} satisfied", flush=True)
+    # A denied attack is a passing test; failed policy checks explain the denial.
+    for check in checks if verbose else failed[:2]:
+        label = "OK" if check["passed"] else "BLOCK"
+        print(f"    {label} {check['name']}: {check['detail']}", flush=True)
+    if not verbose and len(failed) > 2:
+        print(f"    + {len(failed) - 2} more blocking checks (use --verbose)", flush=True)
+    print("  Signer called: " + ("yes" if result["signing_attempted"] else "no")
+          + " | Payment submitted: " + ("yes" if result["payment_submitted"] else "no"), flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -225,12 +276,37 @@ def main(argv: list[str] | None = None) -> int:
         default=5.0,
         help="per-scenario peer request timeout in seconds",
     )
+    parser.add_argument("--demo", action="store_true", help="show readable, live per-case results for a terminal demonstration")
+    parser.add_argument("--verbose", action="store_true", help="with --demo, show every policy check instead of only blocking checks")
+    parser.add_argument("--report", type=Path, help="also save the complete JSON report to this file")
     args = parser.parse_args(argv)
+    if args.verbose and not args.demo:
+        parser.error("--verbose requires --demo")
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
 
-    report = run_suite(args.endpoint, args.timeout)
-    print(json.dumps(report, indent=2))
+    if args.demo:
+        print("NexVault | Adversarial payment guard tests", flush=True)
+        print("Target: " + (args.endpoint or "local Python payer guard (no server or browser required)"), flush=True)
+        print(f"Running {len(SCENARIOS)} cases against the real guard implementation.", flush=True)
+        print("Decision-only dry run: no signer is created and no funds are transferred.", flush=True)
+        print("PASS means the actual decision matched the expected test outcome.", flush=True)
+    report = run_suite(
+        args.endpoint, args.timeout,
+        on_result=(lambda result: print_demo_result(result, args.verbose)) if args.demo else None,
+    )
+    if args.report:
+        try:
+            args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        except OSError as error:
+            print(f"Could not save report: {error}", file=sys.stderr)
+            return 1
+        print(f"\nFull JSON report saved to {args.report}", file=sys.stderr)
+    if args.demo:
+        passed = sum(result["passed"] for result in report["results"])
+        print(f"\nResult: {passed}/{len(report['results'])} cases passed")
+    else:
+        print(json.dumps(report, indent=2))
     summary = report["summary"]
     print("\nSummary:")
     print(f"  Baseline passed: {'yes' if summary['baseline_passed'] else 'NO'}")
@@ -246,6 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         "  Repeated-call burst blocked: "
         f"{'yes' if summary['multiple_calls_blocked'] else 'NO / endpoint error'}"
     )
+    print(f"  Small-payment flood detected: {'yes' if summary['small_payment_flood_detected'] else 'NO / endpoint error'}")
     print(f"  All scenarios passed: {'yes' if summary['all_scenarios_passed'] else 'NO'}")
     return 0 if summary["all_scenarios_passed"] else 1
 

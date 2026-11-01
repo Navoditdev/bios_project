@@ -36,6 +36,13 @@ The repository contains a local x402 v2 mock prototype with:
   maximum amount, recipient allowlist, network, asset, scheme, requested
   resource, and offer shape. A thread-safe in-memory ledger reserves spend
   before signing and enforces rolling hourly and daily budgets.
+- `behavior_risk.py`: extracts recent payment-pattern features from local
+  SQLite history and applies the bundled XGBoost behavior-risk model before
+  signing. The demo stores origin hosts, amounts, timestamps, and outcomes, not
+  resource URL paths or query strings.
+- `behavior_lab.py`, `synthetic_behavior_data.py`, and
+  `train_behavior_model.py`: run five simulated attack profiles and train the
+  prototype model from labeled synthetic sessions.
 - `mock_pay.py` and `demo.html`: the official x402 SDK creates a payload using
   a placeholder signer; the demo can tamper with selected offer fields and
   display the result. A successful mock response settles the reservation;
@@ -56,12 +63,15 @@ payment.
 
 ## Current limits
 
-The signer is a placeholder. The project does not use a private key, verify a
-real ECDSA signature, contact a facilitator, or settle an on-chain payment. It
-does not currently include an LLM-driven agent. The local suite tests our own
-policy; a peer endpoint must be supplied to record an actual cross-team run.
-The spend ledger is process-local and resets on restart; it is a prototype, not
-durable or shared across multiple signer processes.
+The behavior model and its evaluation data are synthetic; metrics do not
+establish real-world detection quality. The local demo uses one configured
+`agent_id`, not a cryptographically verified agent identity or fingerprint.
+The project does not currently include an LLM-driven agent. The signer is a
+placeholder; the project does not use a private key, verify a real ECDSA
+signature, contact a facilitator, or settle an on-chain payment. A peer
+endpoint must be supplied to record an actual cross-team run. The spend ledger
+is process-local and resets on restart; it is not durable or shared across
+multiple signer processes.
 
 Do not describe the mock prototype as production wallet protection. Describe it
 as a payer-side policy gate and cross-team dry-run harness under development.

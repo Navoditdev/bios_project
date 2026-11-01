@@ -136,11 +136,16 @@
       const wrongParty = getActual('wrong_party');
       const repeatedCalls = results.get('multiple_calls')?.decision?.call_results;
       const repeatedCallsPassed = JSON.stringify(repeatedCalls) === '[true,false,false]';
+      const smallPaymentCalls = results.get('small_payment_flood')?.decision?.call_results;
+      const floodDetected = Array.isArray(smallPaymentCalls)
+        && smallPaymentCalls.some(Boolean)
+        && smallPaymentCalls.some(allowed => !allowed);
       const metrics = [
         ['Baseline', baseline === undefined ? 'Not run' : (baseline ? 'Passed · allowed' : 'Failed · denied'), baseline === undefined ? 'neutral' : (baseline ? 'good' : 'bad')],
         ['Overpayment', overpayment === undefined ? 'Not run' : (!overpayment ? 'Blocked' : 'Attack got through'), overpayment === undefined ? 'neutral' : (!overpayment ? 'good' : 'bad')],
         ['Wrong party', wrongParty === undefined ? 'Not run' : (!wrongParty ? 'Blocked' : 'Attack got through'), wrongParty === undefined ? 'neutral' : (!wrongParty ? 'good' : 'bad')],
         ['Repeated calls', repeatedCalls === undefined ? 'Not run' : (repeatedCallsPassed ? 'Budget enforced in order' : 'Unexpected call decisions'), repeatedCalls === undefined ? 'neutral' : (repeatedCallsPassed ? 'good' : 'bad')],
+        ['Small-payment flood', smallPaymentCalls === undefined ? 'Not run' : (floodDetected ? 'Behavior anomaly detected' : 'Unexpected call decisions'), smallPaymentCalls === undefined ? 'neutral' : (floodDetected ? 'good' : 'bad')],
         ['Signer / payment', 'Not called · not sent', 'good'],
       ];
       for (const [label, value, color] of metrics) {
@@ -159,7 +164,11 @@
         const actual = decision ? (decision.authorized ? 'ALLOW' : 'DENY') : 'ERROR';
         const correct = decision && (scenario.scenario_id === 'multiple_calls'
           ? JSON.stringify(decision.call_results) === '[true,false,false]'
-          : decision.authorized === scenario.expected_authorized);
+          : (scenario.scenario_id === 'small_payment_flood'
+            ? decision.authorized === false
+              && decision.call_results?.some(Boolean)
+              && decision.call_results?.some(allowed => !allowed)
+            : decision.authorized === scenario.expected_authorized));
         const attackSucceeded = Boolean(scenario.attack_class && !scenario.expected_authorized && decision?.authorized);
         const card = element('article', 'result');
         const head = element('div', 'result-head');

@@ -3,66 +3,201 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Local x402 payment guard demo</title>
+  <title>NexVault · Payment Security Lab</title>
   <style>
-    :root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; background: #f4f7fb; color: #152238; }
-    body { max-width: 920px; margin: 36px auto; padding: 0 20px; }
-    h1 { margin-bottom: 8px; }
-    .note { color: #5a6780; line-height: 1.5; }
-    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 24px 0; }
-    .step, .panel { background: white; border: 1px solid #dce4ef; border-radius: 12px; padding: 16px; }
-    .step b { display: block; color: #2463eb; margin-bottom: 6px; }
-    .summary { background: white; border: 1px solid #dce4ef; border-left: 6px solid #7d8aa0; border-radius: 12px; margin: 12px 0 20px; padding: 18px 20px; }
-    .summary.allowed { border-left-color: #16834b; }
-    .summary.blocked { border-left-color: #c63c3c; }
-    .summary h3 { margin: 0 0 10px; }
-    .summary p { line-height: 1.5; margin: 6px 0; }
-    .summary ul { line-height: 1.5; margin: 6px 0; padding-left: 22px; }
-    details { margin-top: 14px; }
-    button { background: #2463eb; border: 0; border-radius: 8px; color: white; cursor: pointer; font-size: 16px; padding: 12px 18px; }
-    button:disabled { cursor: wait; opacity: .65; }
-    #status { margin-left: 12px; color: #50617a; }
-    pre { overflow: auto; max-height: 560px; background: #111827; border-radius: 10px; color: #e5eefc; padding: 18px; line-height: 1.45; }
-    .warning { border-left: 4px solid #ed9b21; padding: 10px 14px; background: #fff7e8; border-radius: 6px; }
-    .scenario-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 16px 0; }
-    .scenario-card, .case-result { background: white; border: 1px solid #dce4ef; border-radius: 10px; padding: 14px; }
-    .scenario-card h3, .case-result h3 { margin: 0 0 6px; }
-    .scenario-card p, .case-result p { line-height: 1.45; }
-    .scenario-id { color: #5a6780; font-family: ui-monospace, monospace; font-size: 13px; }
-    .case-result { margin: 10px 0; }
-    .pass { color: #137347; } .fail { color: #b42332; }
-    .suite-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
-    button.secondary { background: #e8eef8; color: #24344e; }
-    .checks { padding-left: 20px; line-height: 1.5; }
+
+    :root { color-scheme: light; font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color: #17283f; font-synthesis: none; }
+    * { box-sizing: border-box; }
+    body { max-width: 1200px; margin: 0 auto; padding: 36px 28px 56px; min-height: 100vh; }
+    html { background: linear-gradient(165deg, #061d56 0%, #143984 42%, #5c89ed 100%); background-attachment: fixed; }
+    button, input, select { font: inherit; }
+    button { border: 1px solid transparent; border-radius: 9px; background: #0868e8; color: white; cursor: pointer; padding: 12px 18px; font-size: 13px; font-weight: 750; transition: background .18s, transform .18s, box-shadow .18s; }
+    button:hover:not(:disabled) { background: #0055c4; transform: translateY(-1px); box-shadow: 0 4px 12px #0868e825; }
+    button:disabled { cursor: wait; opacity: .6; }
+    button.secondary { background: #edf4ff; color: #075bcc; border-color: #ccddf8; }
+    button.secondary:hover:not(:disabled) { background: #dceaff; }
+    :focus-visible { outline: 3px solid #b545ec; outline-offset: 4px; }
+    h1, h2, h3, h4, p { overflow-wrap: anywhere; }
+    h1 { font-size: clamp(25px, 3vw, 34px); letter-spacing: -.045em; line-height: 1.15; margin: 6px 0 12px; }
+    h2 { font-size: 20px; letter-spacing: -.035em; margin: 0 0 10px; }
+    h3 { font-size: 16px; line-height: 1.35; margin: 0 0 8px; }
+    p { font-size: 13px; line-height: 1.65; }
+    .note, .lab-pattern { color: #64758c; line-height: 1.65; }
+    .brand-header { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 30px; color: white; }
+    .wordmark { display: inline-block; font-family: 'Segoe Print', 'Comic Sans MS', cursive; font-weight: 800; font-style: italic; font-size: 48px; line-height: 1.15; letter-spacing: -3px; color: #ffe04c; text-decoration: underline; text-underline-offset: 9px; text-decoration-thickness: 2px; }
+    .brand-caption { margin: 17px 0 0; color: #bacdf2; font-size: 10px; text-transform: uppercase; letter-spacing: .22em; }
+    .session-badge { display: flex; gap: 9px; align-items: center; font-size: 11px; letter-spacing: .1em; border: 1px solid #ffffff30; padding: 10px 14px; border-radius: 30px; background: #ffffff08; }
+    .session-badge::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: #62e5ac; box-shadow: 0 0 12px #62e5ac70; }
+    .demo-nav { display: flex; gap: 6px; padding: 6px; margin: 0 0 22px; background: #04194760; border: 1px solid #ffffff18; border-radius: 13px; width: fit-content; }
+    .demo-nav button { background: transparent; color: #bfceeb; padding: 11px 20px; }
+    .demo-nav button[aria-selected="true"] { background: white; color: #123a7b; box-shadow: 0 2px 7px #00133630; }
+    .demo-nav button:hover:not(:disabled) { background: #ffffff15; color: white; box-shadow: none; }
+    .demo-nav button[aria-selected="true"]:hover { background: #f1f6ff; color: #123a7b; }
+    .demo-slide[hidden] { display: none; }
+    .payment-hero { display: flex; justify-content: space-between; align-items: center; gap: 24px; color: white; }
+    .payment-hero .note { color: #c5d5f4; max-width: 720px; margin: 0; }
+    .eyebrow { display: block; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: #8db8ff; margin-bottom: 10px; }
+    .mock-badge { flex: none; border: 1px solid #ffffff30; color: #ffe785; background: #ffe04c0c; border-radius: 7px; padding: 9px 12px; font-size: 10px; font-weight: 750; letter-spacing: .05em; }
+    .flow-strip { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 35px; padding: 34px 40px; margin: 12px 0 22px; }
+    .flow-strip::before { content: ''; position: absolute; top: 50%; left: 0; right: 0; border-top: 1px solid #97baff70; }
+    .flow-step { position: relative; display: flex; align-items: center; justify-content: center; gap: 12px; background: #fff; border: 1px solid #e6dcff; border-radius: 10px; min-height: 76px; padding: 14px; box-shadow: 9px 8px 0 #5835ec, -8px -7px 0 #b73aee; }
+    .flow-step::after { content: '→'; position: absolute; right: -29px; color: #adc8ff; font-size: 22px; }
+    .flow-step:last-child::after { display: none; }
+    .flow-step span { display: grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 7px; background: #edf3ff; color: #0868e8; font-size: 11px; font-weight: 800; }
+    .flow-step b { display: block; font-size: 12px; letter-spacing: .055em; }
+    .flow-step small { display: block; color: #6a7890; font-size: 10px; margin-top: 5px; }
+    .flow-step:nth-child(2) b { color: #0868e8; }
+    .workspace-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 20px; align-items: stretch; }
+    .panel, .decision-panel, .suite-panel, .behavior-shell { background: #fff; border: 1px solid #d7e4ff; border-radius: 24px; padding: 26px; box-shadow: 0 8px 28px #001b4910; }
+    .section-kicker { display: block; color: #0767db; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .15em; margin-bottom: 10px; }
+    .payment-controls .section-kicker { color: #d72e4a; }
+    .decision-panel .section-kicker { color: #008552; }
+    .payment-controls { margin: 0; }
+    .payment-controls h2 { margin: 0 0 8px; }
+    .payment-controls > .note { margin: 0 0 20px; }
+    .control-row { display: grid; gap: 15px; }
+    .control-field { min-width: 0; }
+    .control-field label { display: block; margin-bottom: 7px; color: #3b4c65; font-size: 11px; font-weight: 750; }
+    .control-field label .note { font-weight: 400; }
+    select, input { width: 100%; min-height: 44px; border: 1px solid #ccd9ed; border-radius: 8px; padding: 10px 12px; color: #17283f; background: #f7faff; font-size: 13px; }
+    #run { background: #008855; width: 100%; margin-top: 2px; }
+    #run:hover:not(:disabled) { background: #006f46; }
+    #status { display: block; min-height: 18px; margin: 12px 0 0; font-size: 12px; color: #60708b; }
+    .summary { border: 1px solid #d5e1f1; border-left: 3px solid #8ca4c5; background: #f5f8fd; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    .summary p { margin: 5px 0; }
+    .summary ul { font-size: 13px; line-height: 1.6; padding-left: 20px; }
+    .summary.allowed { border-color: #9ddbbd; border-left-color: #008552; background: #effbf3; }
+    .summary.blocked { border-color: #f3b5c0; border-left-color: #da2f4c; background: #fff3f5; }
+    #summary { min-height: 180px; margin-bottom: 18px; }
+    #summary:not(.allowed):not(.blocked) { display: flex; flex-direction: column; justify-content: center; background: #f0fcf3; border: 1px solid #b5dfc3; }
+    details { margin-top: 16px; font-size: 12px; line-height: 1.7; }
+    summary { cursor: pointer; color: #536b8d; font-weight: 650; }
+    pre { overflow: auto; max-height: 480px; background: #0c2147; border-radius: 10px; color: #dce9ff; padding: 16px; font-size: 11px; line-height: 1.6; }
+    .suite-panel { margin-top: 24px; }
+    .suite-panel > .note { margin: 0 0 16px; }
+    .suite-toolbar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 18px 0; font-size: 12px; color: #64758c; }
+    #run-all-cases { background: #dc2544; }
+    #run-all-cases:hover:not(:disabled) { background: #be1935; }
+    .scenario-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; }
+    .scenario-card, .case-result, .lab-card { min-width: 0; background: #fff; border: 1px solid #dce5f3; border-radius: 14px; padding: 18px; }
+    .scenario-card { display: flex; flex-direction: column; background: #f7faff; }
+    .scenario-card h3 { font-size: 14px; }
+    .scenario-card p { margin: 9px 0; font-size: 12px; }
+    .scenario-card button { align-self: flex-start; margin-top: auto; padding: 9px 14px; font-size: 11px; }
+    .scenario-id { color: #657c9b; font-family: ui-monospace, monospace; font-size: 10px; overflow-wrap: anywhere; }
+    .case-result { margin: 12px 0; }
+    .pass { color: #008552; } .fail { color: #ce2442; }
+    .checks { padding-left: 18px; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+    .endpoint-details { color: #c9daf7; padding: 0 8px; }
+    .endpoint-details summary { color: #dbe7ff; }
+    .endpoint-details li { margin: 8px 0; overflow-wrap: anywhere; }
+    .warning { border-left: 3px solid #e9b83b; padding: 12px 16px; background: #fff9e9; color: #765d23; border-radius: 8px; font-size: 12px; line-height: 1.7; }
+    .lab-intro { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 18px 0; }
+    .lab-stat { background: #f1f6ff; border: 1px solid #dce5f3; border-radius: 12px; padding: 18px; }
+    .lab-stat b { display: block; font-size: 11px; color: #64758c; margin-bottom: 8px; }
+    .lab-stat strong { font-size: 26px; letter-spacing: -.04em; }
+    .lab-results { display: grid; gap: 16px; }
+    .lab-pattern { margin: 4px 0 14px; }
+    .lab-meta { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    .lab-chip { background: #edf3ff; border-radius: 999px; padding: 6px 10px; font-size: 11px; }
+    .lab-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .lab-chart { min-width: 0; border: 1px solid #e0e8f5; border-radius: 10px; padding: 12px; }
+    .lab-chart h4 { margin: 2px 0 8px; font-size: 13px; }
+    .lab-chart svg { width: 100%; height: auto; display: block; }
+    .lab-chart text { font: 11px ui-sans-serif, system-ui, sans-serif; fill: #52627a; }
+    .lab-attempts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 7px; margin-top: 12px; }
+    .attempt-pill { border-radius: 8px; padding: 9px; font-size: 11px; background: #f2f5fa; border-left: 3px solid #98a5b8; }
+    .attempt-pill.allowed { border-left-color: #008552; }
+    .attempt-pill.denied { border-left-color: #ce2442; }
+    .attempt-pill small { display: block; color: #64758c; margin-top: 3px; }
+    .lab-status { min-height: 1.5em; }
+    .site-footer { display: flex; justify-content: space-between; gap: 12px; margin: 24px 4px 0; color: #c5d7fa; font-size: 10px; letter-spacing: .05em; }
+    @media (max-width: 900px) { .scenario-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .flow-strip { padding-left: 12px; padding-right: 12px; } .flow-step { gap: 8px; } .flow-step small { font-size: 9px; } .mock-badge { display: none; } }
+    @media (max-width: 640px) {
+      body { padding: 24px 16px 32px; } .brand-header { margin-bottom: 24px; } .wordmark { font-size: 37px; } .brand-caption { font-size: 8px; letter-spacing: .15em; } .session-badge { font-size: 8px; padding: 8px; letter-spacing: .02em; }
+      .demo-nav { width: 100%; } .demo-nav button { flex: 1; font-size: 11px; padding: 11px 8px; }
+      .flow-strip { gap: 18px; padding: 24px 6px; } .flow-step { min-height: 64px; padding: 10px 4px; box-shadow: 4px 4px 0 #5835ec, -4px -4px 0 #b73aee; } .flow-step span, .flow-step small { display: none; } .flow-step b { font-size: 9px; } .flow-step::after { right: -16px; font-size: 16px; }
+      .workspace-grid, .lab-charts { grid-template-columns: 1fr; } .panel, .decision-panel, .suite-panel, .behavior-shell { padding: 22px 18px; border-radius: 19px; } .scenario-grid { grid-template-columns: 1fr; } .site-footer { flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) { button { transition: none; } button:hover:not(:disabled) { transform: none; } }
+
+    .results-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; background: #fff; border: 1px solid #d7e4ff; border-radius: 16px; padding: 18px 6px; margin: 0 0 24px; }
+    .strip-metric { padding: 0 22px; min-width: 0; }
+    .strip-metric + .strip-metric { border-left: 1px solid #e0e8f5; }
+    .strip-metric span { display: block; color: #65758c; font-size: 10px; letter-spacing: .09em; text-transform: uppercase; font-weight: 750; }
+    .strip-metric strong { display: block; margin: 5px 0; font-size: 22px; letter-spacing: -.035em; }
+    .strip-metric small { color: #65758c; font-size: 11px; }
+    .decision-label { font-size: 30px; letter-spacing: -.04em; margin: 0 0 8px; }
+    .allowed .decision-label { color: #008552; } .blocked .decision-label { color: #ce2442; }
+    .summary.error { border-left-color: #bc791d; background: #fff8eb; }
+    .decision-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
+    .decision-facts span { background: #ffffffb0; border: 1px solid #0000000d; border-radius: 6px; padding: 5px 8px; font-size: 11px; }
+    .result-row { margin: 8px 0; border: 1px solid #dce5f3; border-radius: 10px; background: #fff; padding: 0; }
+    .result-row > summary { padding: 14px 16px; color: #17283f; font-size: 12px; }
+    .result-title { font-weight: 750; margin-right: 12px; }
+    .result-outcome { display: inline-block; font-size: 10px; font-weight: 800; border-radius: 5px; padding: 3px 7px; background: #edf8f2; }
+    .result-outcome.fail { background: #fff0f2; }
+    .result-meta { display: inline-block; font-weight: 400; color: #65758c; font-size: 11px; margin-left: 10px; }
+    .result-body { border-top: 1px solid #e4ebf5; padding: 4px 18px 16px; }
+    .result-row[open] > summary { background: #f7faff; border-radius: 10px 10px 0 0; }
+    @media (max-width: 640px) { .results-strip { padding: 14px 0; } .strip-metric { padding: 0 10px; } .strip-metric span { font-size: 8px; letter-spacing: .02em; } .strip-metric strong { font-size: 18px; } .strip-metric small { font-size: 9px; } .result-meta { display: block; margin: 7px 0 0 14px; } }
   </style>
 </head>
 <body>
-  <h1>Local x402 payment guard</h1>
-  <p class="note">Run the normal flow, or act as a red team member and alter one field in the HTTP 402 offer. The deterministic payer agent checks its own policy before it lets the x402 SDK call the signer.</p>
-  <div class="warning"><b>Mock mode:</b> the payer guard is real control flow, but the wallet is a mock signer that returns a placeholder. No private key or funds are used.</div>
-  <section class="steps" aria-label="Payer-side decision order">
-    <div class="step"><b>1 · Parse offer</b><code>client.py</code> decodes the HTTP 402 requirements.</div>
-    <div class="step"><b>2 · Payer policy</b>Agent checks the offer against its own trusted limits and allowlists.</div>
-    <div class="step"><b>3 · Sign only after ALLOW</b>Only then does the x402 SDK call the mock signer.</div>
-    <div class="step"><b>4 · Retry</b>A denied offer never sends a payment retry.</div>
-    <div class="step"><b>5 · Optional server validation</b>The resource server checks a retry only if the payer sent one.</div>
+  <header class="brand-header">
+    <div><div class="wordmark">NexVault</div><p class="brand-caption">Payment security / Live simulation</p></div>
+    <div class="session-badge">LOCAL SIMULATION</div>
+  </header>
+  <nav class="demo-nav" aria-label="Demo slides">
+    <button type="button" class="slide-tab" data-slide="payment" aria-selected="true">01 / Payment demo</button>
+    <button type="button" class="slide-tab" data-slide="behavior" aria-selected="false">02 / Behavior attack lab</button>
+  </nav>
+  <section class="results-strip" aria-label="Latest simulation results" role="status" aria-atomic="true">
+    <div class="strip-metric"><span>Latest payment decision</span><strong id="latest-decision">Not run</strong><small id="decision-context">Run a payment check to begin</small></div>
+    <div class="strip-metric"><span>Mock signer</span><strong id="latest-signer">—</strong><small id="signer-context">No payment run this session</small></div>
+    <div class="strip-metric"><span>Adversarial cases passed</span><strong id="cases-passed">—</strong><small id="cases-context">Loading case catalog…</small></div>
   </section>
-  <p class="note"><b>Red-team injection point:</b> an attack may alter the parsed offer after step 1 and before step 2. It cannot change the payer's trusted policy.</p>
-  <section class="panel">
-    <label for="attack"><b>Red-team field</b></label>
-    <select id="attack">
-      <option value="">No tampering (baseline)</option>
-      <option value="amount">Change amount</option>
-      <option value="recipient">Change recipient (payTo)</option>
-      <option value="asset">Change token asset</option>
-      <option value="network">Change network</option>
-    </select>
-    <label for="value"><b>Replacement value</b></label>
-    <input id="value" value="20000" aria-label="Replacement payment requirement value">
-    <button id="run">Run this scenario</button><span id="status" role="status"></span>
-    <p class="note">Examples: amount <code>20000</code>; recipient or asset a different 0x address; network <code>eip155:8453</code>.</p>
+  <main id="slide-payment" class="demo-slide">
+  <div class="payment-hero">
+    <div>
+      <span class="eyebrow">Your agent. Your rules.</span>
+      <h1>Every payment, protected.</h1>
+      <p class="note">A server’s HTTP 402 offer is untrusted input. The payer checks its policy, rolling budget, and recent behavior before the SDK can reach the signer.</p>
+    </div>
+    <span class="mock-badge">LOCAL DEMO · MOCK SIGNER</span>
+  </div>
+  <section class="flow-strip" aria-label="Payment decision flow">
+    <div class="flow-step"><span>1</span><div><b>AI AGENT</b><small>Receive the 402 offer</small></div></div>
+    <div class="flow-step"><span>2</span><div><b>PAYMENT GUARD</b><small>Policy · budget · behavior</small></div></div>
+    <div class="flow-step"><span>3</span><div><b>WALLET</b><small>Sign only when allowed</small></div></div>
   </section>
-  <h2>What happened</h2>
+  <div class="workspace-grid">
+  <section class="panel payment-controls">
+    <span class="section-kicker">01 / Attack simulator</span>
+    <h2>Try a payment offer</h2>
+    <p class="note">Run the baseline or change one offer field to see what the payer guard allows through to the mock signer.</p>
+    <div class="control-row">
+      <div class="control-field">
+        <label for="attack">Offer scenario</label>
+        <select id="attack">
+          <option value="">Baseline · unchanged offer</option>
+          <option value="amount">Alter amount</option>
+          <option value="recipient">Alter recipient (payTo)</option>
+          <option value="asset">Alter token asset</option>
+          <option value="network">Alter network</option>
+        </select>
+      </div>
+      <div class="control-field">
+        <label for="value">Replacement value <span class="note">(used for altered offers)</span></label>
+        <input id="value" value="20000" aria-label="Replacement payment requirement value">
+      </div>
+      <button id="run">Run payment check</button>
+    </div>
+    <p id="status" class="note" role="status"></p>
+  </section>
+  <section class="decision-panel">
+  <span class="section-kicker">02 / Live decision</span>
+  <h2>Payment decision</h2>
   <section id="summary" class="summary" aria-live="polite">
     <h3>Ready to run</h3>
     <p>Choose a scenario above. This summary will explain the agent's decision in plain language.</p>
@@ -71,8 +206,12 @@
     <summary>Technical details (JSON)</summary>
     <pre id="output">Run a scenario to see the parsed offer, payer policy checks, signer input, retry, and server-side result.</pre>
   </details>
-  <h2>Adversarial case suite</h2>
-  <p class="note">Run the full project's decision-only cases from this page. These cases never call the signer or send a payment. The repeated-calls case submits three individually valid offers against one fresh rolling budget.</p>
+  </section>
+  </div>
+  <section class="suite-panel" aria-labelledby="suite-heading">
+  <span class="section-kicker">03 / Put the guard to the test</span>
+  <h2 id="suite-heading">Adversarial test suite</h2>
+  <p class="note">Run the project’s decision-only cases, including repeated small payments that stay under the hard hourly budget. Cases never call the signer or send a payment.</p>
   <div class="suite-toolbar">
     <button id="run-all-cases" type="button">Run all adversarial cases</button>
     <span id="suite-status" role="status">Loading cases…</span>
@@ -80,103 +219,93 @@
   <section id="suite-summary" class="summary" aria-live="polite"><p>Loading the local case catalog.</p></section>
   <section id="scenario-cards" class="scenario-grid" aria-label="Adversarial cases"></section>
   <section id="case-results" aria-live="polite"><p class="note">Run a case to see its expected and actual decision and policy checks.</p></section>
-  <details>
+  </section>
+  <details class="endpoint-details">
     <summary>Project endpoints on this local server</summary>
     <ul>
       <li><code>GET /paid</code> — mock x402 resource challenge and protected resource.</li>
       <li><code>GET /demo/run</code> — full mock signing and retry flow used by the controls above.</li>
       <li><code>GET /cross-team/scenarios</code> — adversarial case catalog and offer fixtures.</li>
-      <li><code>POST /evaluate</code> — decision-only case evaluation, including repeated calls.</li>
+      <li><code>POST /evaluate</code> — decision-only case evaluation, including repeated calls and the small-payment flood.</li>
+      <li><code>GET /behavior-lab/scenarios</code> and <code>POST /behavior-lab/run</code> — fixed behavioral attack profiles and their dry-run results.</li>
       <li><code>GET /health</code> — local server health.</li>
     </ul>
   </details>
+  </main>
+  <main id="slide-behavior" class="demo-slide behavior-shell" hidden>
+    <span class="section-kicker">Behavior intelligence / Dry run</span>
+    <h1>Behavior attack lab</h1>
+    <p class="note">Run controlled behavioral attack sequences through the same XGBoost scorer, payer policy, and rolling ledger. The lab advances a simulated clock so slow-drain patterns can be explored without waiting. It never signs or sends payments.</p>
+    <div class="warning"><b>Reading the charts:</b> radar axes show the peak normalized behavior signals observed in that run; the line chart shows model risk at each attempt. These are model scores from synthetic training, not real-world fraud probabilities.</div>
+    <div class="suite-toolbar">
+      <button id="run-all-behavior" type="button">Run all behavior attacks</button>
+      <span id="behavior-status" class="lab-status" role="status">Loading behavior scenarios…</span>
+    </div>
+    <section id="behavior-overview" class="lab-intro" aria-live="polite"></section>
+    <section id="behavior-scenarios" class="scenario-grid" aria-label="Behavior attack cases"></section>
+    <section id="behavior-results" class="lab-results" aria-live="polite"><p class="note">Run a scenario to see its risk profile and decisions.</p></section>
+  </main>
+  <footer class="site-footer"><span>NEXVAULT / x402 PAYMENT SECURITY</span><span>Mock signer · Local environment · No real funds</span></footer>
   <script>
     const button = document.querySelector('#run');
     const attack = document.querySelector('#attack');
     const value = document.querySelector('#value');
     const examples = { amount: '20000', recipient: '0x0000000000000000000000000000000000000001', asset: '0x0000000000000000000000000000000000000002', network: 'eip155:8453' };
     attack.addEventListener('change', () => { if (examples[attack.value]) value.value = examples[attack.value]; });
+    function updatePaymentMetrics(decision, signer, context, signerContext) {
+      const metric = document.querySelector('#latest-decision');
+      metric.textContent = decision;
+      metric.className = decision === 'Allowed' ? 'pass' : decision === 'Blocked' ? 'fail' : '';
+      document.querySelector('#latest-signer').textContent = signer;
+      document.querySelector('#decision-context').textContent = context;
+      document.querySelector('#signer-context').textContent = signerContext;
+    }
+
     function renderSummary(result) {
       const box = document.querySelector('#summary');
       box.replaceChildren();
       const decision = result.payer_guard_decision;
       if (!decision) {
-        box.className = 'summary blocked';
-        const title = document.createElement('h3');
-        title.textContent = 'The flow could not complete';
-        box.append(title);
-        const message = document.createElement('p');
-        message.textContent = result.error || 'The server did not return a payer decision.';
-        box.append(message);
+        box.className = 'summary error';
+        box.append(node('h3', 'decision-label', 'Could not complete'), node('p', '', result.error || 'No payer decision was returned. Try again.'));
+        updatePaymentMetrics('Error', 'Unknown', 'Payment flow did not complete', 'Signer outcome could not be verified');
         return;
       }
-
-      const changed = result.scenario && result.scenario.field;
       const allowed = decision.authorized;
+      const changed = result.scenario?.field;
       box.className = 'summary ' + (allowed ? 'allowed' : 'blocked');
-      const heading = document.createElement('h3');
-      heading.textContent = changed
-        ? (result.red_team_result.succeeded
-          ? 'Attack succeeded: policy-violating offer reached the signer'
-          : (allowed ? 'Offer change is policy-compliant; attack not successful' : 'Red-team offer was blocked before signing'))
-        : (allowed ? 'Baseline offer was allowed' : 'Agent policy blocked the offer');
-      box.append(heading);
-
-      const scenario = document.createElement('p');
-      scenario.textContent = changed
-        ? 'Red team changed ' + changed + ' to ' + result.scenario.value + '.'
-        : 'No offer field was changed.';
-      box.append(scenario);
-
-      const decisionLine = document.createElement('p');
-      decisionLine.textContent = allowed
-        ? 'The offer is within the agent’s trusted policy.'
-        : 'The agent denied the offer using policy stored on the payer side.';
-      box.append(decisionLine);
-
-      const signerLine = document.createElement('p');
-      signerLine.textContent = result.signing_attempted
-        ? 'Signer: called ' + result.signer_call_count + ' time(s) (mock only).'
-        : 'Signer: not called. The offer was stopped before signing.';
-      box.append(signerLine);
-
-      const retryLine = document.createElement('p');
-      retryLine.textContent = result.retry_sent
-        ? 'Payment retry: sent; resource server replied ' + result.flow[5].result + '.'
-        : 'Payment retry: not sent.';
-      box.append(retryLine);
-
-      const serverLine = document.createElement('p');
-      serverLine.textContent = result.server_guard_evaluated
-        ? 'Separate resource-server guard: ' + result.flow[6].result + '.'
-        : 'Separate resource-server guard: not reached.';
-      box.append(serverLine);
-
-      if (decision.reasons && decision.reasons.length) {
-        const why = document.createElement('p');
-        why.textContent = 'Why the payer guard denied it:';
-        box.append(why);
-        const list = document.createElement('ul');
-        for (const reason of decision.reasons) {
-          const item = document.createElement('li');
-          item.textContent = reason;
-          list.append(item);
-        }
-        box.append(list);
+      box.append(node('h3', 'decision-label', allowed ? 'Allowed' : 'Blocked'));
+      box.append(node('p', '', allowed
+        ? 'This offer passed the payer’s policy, behavior, and budget checks.'
+        : (decision.reasons?.[0] || 'This offer failed the payer’s checks.')));
+      const facts = node('div', 'decision-facts');
+      facts.append(node('span', '', result.signing_attempted ? 'Mock signer called' : 'Signer skipped'),
+        node('span', '', result.retry_sent ? 'Payment retry sent' : 'No payment retry'));
+      box.append(facts);
+      const details = node('details');
+      details.append(node('summary', '', 'View policy checks and flow details'));
+      details.append(node('p', '', changed ? 'Offer changed: ' + changed + ' → ' + result.scenario.value : 'Baseline offer · no fields changed.'));
+      const checks = node('ul', 'checks');
+      for (const check of decision.checks || []) {
+        checks.append(node('li', check.passed ? 'pass' : 'fail', `${check.passed ? 'PASS' : 'FAIL'} · ${check.name}: ${check.detail}`));
       }
-      if (changed && result.red_team_result) {
-        const attack = document.createElement('p');
-        attack.textContent = 'Red-team result: ' + result.red_team_result.summary;
-        box.append(attack);
-      }
-      const caveat = document.createElement('p');
-      caveat.className = 'note';
-      caveat.textContent = 'The signer is a placeholder. This demo makes no real wallet signature and transfers no funds.';
-      box.append(caveat);
+      details.append(checks);
+      if (decision.reasons?.length) details.append(node('p', '', 'Denial reasons: ' + decision.reasons.join(' ')));
+      if (changed && result.red_team_result) details.append(node('p', result.red_team_result.succeeded ? 'fail' : '', 'Red-team result: ' + result.red_team_result.summary));
+      details.append(node('p', '', 'Mock signer calls: ' + (result.signer_call_count ?? 'unknown') + '. Resource server: ' +
+        (result.server_guard_evaluated ? (result.flow?.[6]?.result || 'evaluated') : 'not reached') + '. Retry response: ' + (result.retry_sent ? (result.flow?.[5]?.result || 'sent') : 'not sent') + '.'));
+      details.append(node('p', 'note', 'The signer is a placeholder. No real wallet signature is made and no funds are transferred.'));
+      box.append(details);
+      updatePaymentMetrics(allowed ? 'Allowed' : 'Blocked', result.signing_attempted ? 'Called' : 'Skipped',
+        changed ? 'Altered offer · ' + changed : 'Baseline offer', result.signing_attempted ? 'Mock only · no real funds' : 'No signature requested');
     }
     button.addEventListener('click', async () => {
       button.disabled = true;
       document.querySelector('#status').textContent = 'Running local SDK flow…';
+      updatePaymentMetrics('Running…', 'Pending', 'Checking the current offer', 'Waiting for the payment result');
+      const pending = document.querySelector('#summary');
+      pending.className = 'summary';
+      pending.replaceChildren(node('h3', '', 'Checking offer…'), node('p', '', 'Waiting for policy, behavior, and budget checks.'));
       try {
         const params = new URLSearchParams();
         if (attack.value) { params.set('attack', attack.value); params.set('value', value.value); }
@@ -188,6 +317,7 @@
         document.querySelector('#status').textContent = allowed ? 'Payer guard ALLOWED' : (result.payer_guard_decision ? 'Payer guard DENIED' : 'Flow failed');
       } catch (error) {
         document.querySelector('#status').textContent = String(error);
+        renderSummary({ error: 'The payment flow failed: ' + error.message });
       } finally {
         button.disabled = false;
       }
@@ -198,6 +328,15 @@
     const suiteStatus = document.querySelector('#suite-status');
     const suiteSummary = document.querySelector('#suite-summary');
     const runAllCasesButton = document.querySelector('#run-all-cases');
+    const slideTabs = [...document.querySelectorAll('.slide-tab')];
+    for (const tab of slideTabs) {
+      tab.addEventListener('click', () => {
+        const showBehavior = tab.dataset.slide === 'behavior';
+        document.querySelector('#slide-payment').hidden = showBehavior;
+        document.querySelector('#slide-behavior').hidden = !showBehavior;
+        for (const other of slideTabs) other.setAttribute('aria-selected', String(other === tab));
+      });
+    }
     let cases = [];
     let caseDecisions = new Map();
     let suiteBusy = false;
@@ -231,9 +370,11 @@
           scenarioRoot.append(card);
         }
         suiteStatus.textContent = `${cases.length} cases ready`;
+        document.querySelector('#cases-context').textContent = `0 of ${cases.length} cases run`;
         suiteSummary.replaceChildren(node('p', '', 'Run one case or the full adversarial suite.'));
       } catch (error) {
         suiteStatus.textContent = 'Could not load cases';
+        document.querySelector('#cases-context').textContent = 'Case catalog unavailable';
         suiteSummary.className = 'summary blocked';
         suiteSummary.replaceChildren(node('p', '', error.message));
       }
@@ -260,27 +401,35 @@
       suiteStatus.textContent = `${item.scenario_id} finished`;
     }
 
+    function caseMatches({ item, result }) {
+      if (!result) return false;
+      if (item.scenario_id === 'multiple_calls') return JSON.stringify(result.call_results) === '[true,false,false]';
+      if (item.scenario_id === 'small_payment_flood') return result.authorized === false && result.call_results?.some(allowed => !allowed);
+      return result.authorized === item.expected_authorized;
+    }
+
     function renderCases() {
       const entries = cases.filter(item => caseDecisions.has(item.scenario_id))
         .map(item => caseDecisions.get(item.scenario_id));
-      const passed = entries.filter(entry => {
-        if (!entry.result) return false;
-        if (entry.item.scenario_id === 'multiple_calls') {
-          return JSON.stringify(entry.result.call_results) === '[true,false,false]';
-        }
-        return entry.result.authorized === entry.item.expected_authorized;
-      }).length;
+      const passed = entries.filter(caseMatches).length;
+      document.querySelector('#cases-passed').textContent = entries.length ? `${passed} / ${entries.length}` : '—';
+      document.querySelector('#cases-context').textContent = `${entries.length} of ${cases.length} cases run · expected outcomes`;
+      const expanded = new Set([...caseResults.querySelectorAll('details[open]')].map(item => item.dataset.caseId));
       suiteSummary.className = 'summary';
       suiteSummary.replaceChildren(node('p', '', `${passed} of ${entries.length} run cases matched the expected outcome (${cases.length} total).`));
       caseResults.replaceChildren();
       for (const entry of entries) {
         const { item, result, error } = entry;
-        const card = node('article', 'case-result');
-        const matches = result && (item.scenario_id === 'multiple_calls'
-          ? JSON.stringify(result.call_results) === '[true,false,false]'
-          : result.authorized === item.expected_authorized);
-        card.append(node('h3', matches ? 'pass' : 'fail', `${item.title} · ${error ? 'ERROR' : (matches ? 'EXPECTED' : 'UNEXPECTED')}`));
-        card.append(node('p', '', `Expected: ${item.expected_authorized ? 'ALLOW' : 'DENY'} · Actual: ${result ? (result.authorized ? 'ALLOW' : 'DENY') : 'ERROR'}`));
+        const row = node('details', 'result-row');
+        row.dataset.caseId = item.scenario_id;
+        row.open = expanded.has(item.scenario_id);
+        const matches = caseMatches(entry);
+        const header = node('summary');
+        header.append(node('span', 'result-title', item.title),
+          node('span', 'result-outcome ' + (matches ? 'pass' : 'fail'), error ? 'ERROR' : matches ? 'PASS' : 'UNEXPECTED'),
+          node('span', 'result-meta', `Expected ${item.expected_authorized ? 'ALLOW' : 'DENY'} · Actual ${result ? (result.authorized ? 'ALLOW' : 'DENY') : 'ERROR'}`));
+        const card = node('div', 'result-body');
+        row.append(header, card);
         if (error) card.append(node('p', 'fail', error));
         if (result) {
           if (result.call_results) {
@@ -294,7 +443,7 @@
           if (result.reasons?.length) card.append(node('p', '', `Denied because: ${result.reasons.join(' ')}`));
           card.append(node('p', 'note', `Signer called: ${result.signing_attempted ? 'yes' : 'no'} · Payment submitted: ${result.payment_submitted ? 'yes' : 'no'}`));
         }
-        caseResults.append(card);
+        caseResults.append(row);
       }
     }
 
@@ -303,12 +452,234 @@
       suiteBusy = true;
       runAllCasesButton.disabled = true;
       caseDecisions = new Map();
+      renderCases();
       for (const item of cases) await runCase(item);
       suiteBusy = false;
       runAllCasesButton.disabled = false;
       suiteStatus.textContent = 'Full suite finished';
     });
     loadCases();
+
+    const behaviorStatus = document.querySelector('#behavior-status');
+    const behaviorCards = document.querySelector('#behavior-scenarios');
+    const behaviorResults = document.querySelector('#behavior-results');
+    const behaviorOverview = document.querySelector('#behavior-overview');
+    const runAllBehaviorButton = document.querySelector('#run-all-behavior');
+    let behaviorScenarios = [];
+    const behaviorRuns = new Map();
+    let behaviorBusy = false;
+
+    const svgNode = (name, attrs = {}) => {
+      const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+      for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, String(value));
+      return element;
+    };
+
+    function drawRadar(container, axes) {
+      const names = Object.keys(axes);
+      const values = names.map(name => axes[name]);
+      const width = 600, height = 370, cx = 300, cy = 180, radius = 106;
+      const svg = svgNode('svg', { viewBox: '0 0 ' + width + ' ' + height, role: 'img', 'aria-label': 'Radar chart of peak behavior features' });
+      for (const level of [20, 40, 60, 80, 100]) {
+        const coords = names.map((_, index) => {
+          const angle = -Math.PI / 2 + index * 2 * Math.PI / names.length;
+          return (cx + Math.cos(angle) * radius * level / 100) + ',' + (cy + Math.sin(angle) * radius * level / 100);
+        }).join(' ');
+        svg.append(svgNode('polygon', { points: coords, fill: 'none', stroke: '#dce4ef', 'stroke-width': 1 }));
+      }
+      const points = names.map((name, index) => {
+        const angle = -Math.PI / 2 + index * 2 * Math.PI / names.length;
+        const x = cx + Math.cos(angle) * radius;
+        const y = cy + Math.sin(angle) * radius;
+        svg.append(svgNode('line', { x1: cx, y1: cy, x2: x, y2: y, stroke: '#cbd5e1', 'stroke-width': 1 }));
+        const label = svgNode('text', { x: cx + Math.cos(angle) * (radius + 35), y: cy + Math.sin(angle) * (radius + 35), 'text-anchor': Math.cos(angle) > .3 ? 'start' : (Math.cos(angle) < -.3 ? 'end' : 'middle'), 'dominant-baseline': 'middle' });
+        label.textContent = name + ' · ' + Math.round(axes[name]);
+        svg.append(label);
+        const valueRadius = radius * Math.max(0, Math.min(values[index], 100)) / 100;
+        return (cx + Math.cos(angle) * valueRadius) + ',' + (cy + Math.sin(angle) * valueRadius);
+      }).join(' ');
+      svg.append(svgNode('polygon', { points, fill: 'rgba(36,99,235,.22)', stroke: '#2463eb', 'stroke-width': 3 }));
+      container.append(svg);
+    }
+
+    function drawRiskTimeline(container, points, threshold) {
+      const width = 420, height = 220, left = 38, right = 14, top = 18, bottom = 34;
+      const plotWidth = width - left - right, plotHeight = height - top - bottom;
+      const svg = svgNode('svg', { viewBox: '0 0 ' + width + ' ' + height, role: 'img', 'aria-label': 'Model risk by request attempt' });
+      for (const level of [0, .25, .5, .75, 1]) {
+        const y = top + (1 - level) * plotHeight;
+        svg.append(svgNode('line', { x1: left, y1: y, x2: width - right, y2: y, stroke: '#e4eaf2', 'stroke-width': 1 }));
+        const label = svgNode('text', { x: left - 8, y: y + 4, 'text-anchor': 'end' });
+        label.textContent = Math.round(level * 100) + '%';
+        svg.append(label);
+      }
+      const thresholdY = top + (1 - threshold) * plotHeight;
+      svg.append(svgNode('line', { x1: left, y1: thresholdY, x2: width - right, y2: thresholdY, stroke: '#bd3d43', 'stroke-width': 2, 'stroke-dasharray': '5 4' }));
+      const linePoints = points.map((point, index) => {
+        const x = points.length === 1 ? left + plotWidth / 2 : left + index * plotWidth / (points.length - 1);
+        const risk = point.score == null ? 0 : Math.max(0, Math.min(point.score, 1));
+        const y = top + (1 - risk) * plotHeight;
+        return { x, y, point };
+      });
+      svg.append(svgNode('polyline', { points: linePoints.map(point => point.x + ',' + point.y).join(' '), fill: 'none', stroke: '#2463eb', 'stroke-width': 3, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+      for (const item of linePoints) {
+        svg.append(svgNode('circle', { cx: item.x, cy: item.y, r: 4.5, fill: item.point.model_blocked ? '#c63c3c' : '#2463eb', stroke: 'white', 'stroke-width': 1.5 }));
+      }
+      const xLabel = svgNode('text', { x: width / 2, y: height - 4, 'text-anchor': 'middle' });
+      xLabel.textContent = 'Attempt number · dashed line is deny threshold';
+      svg.append(xLabel);
+      container.append(svg);
+    }
+
+    function metricBox(label, value) {
+      const box = node('div', 'lab-stat');
+      box.append(node('b', '', label), node('strong', '', value));
+      return box;
+    }
+
+    function renderBehaviorOverview() {
+      const entries = [...behaviorRuns.values()];
+      const peak = entries.length ? Math.max(...entries.map(result => result.summary.peak_risk || 0)) : 0;
+      behaviorOverview.replaceChildren(
+        metricBox('Attack profiles run', entries.length + ' / ' + behaviorScenarios.length),
+        metricBox('Profiles with a model block', '' + entries.filter(result => result.summary.model_blocks > 0).length),
+        metricBox('Highest observed risk', entries.length ? Math.round(peak * 100) + '%' : '—'),
+        metricBox('Model deny threshold', entries.length ? Math.round(entries[0].threshold * 100) + '%' : '—'),
+      );
+    }
+
+    function renderBehaviorResult(result) {
+      const scenario = behaviorScenarios.find(item => item.scenario_id === result.scenario_id);
+      const row = node('details', 'result-row');
+      row.dataset.caseId = result.scenario_id;
+      const card = node('div', 'result-body');
+      const status = result.summary.model_blocks ? 'MODEL FLAGGED' : (result.model_available ? 'NO MODEL BLOCK' : 'MODEL UNAVAILABLE');
+      const header = node('summary');
+      header.append(node('span', 'result-title', result.title),
+        node('span', 'result-outcome ' + (result.summary.model_blocks ? 'pass' : 'fail'), status),
+        node('span', 'result-meta', `${result.summary.allowed} allowed · ${result.summary.blocked} denied`));
+      row.append(header, card);
+      card.append(node('p', 'lab-pattern', scenario?.attack_pattern || 'Behavior sequence'));
+      card.append(node('p', 'note', scenario?.description || ''));
+      const meta = node('div', 'lab-meta');
+      const firstBlock = result.summary.first_model_block_attempt ? 'attempt ' + result.summary.first_model_block_attempt : 'not detected';
+      const peakText = result.summary.peak_risk == null ? 'unavailable' : (result.summary.peak_risk * 100).toFixed(1) + '%';
+      meta.append(
+        node('span', 'lab-chip', 'Peak risk ' + peakText),
+        node('span', 'lab-chip', 'Model block ' + firstBlock),
+        node('span', 'lab-chip', result.summary.allowed + ' allowed · ' + result.summary.blocked + ' denied'),
+        node('span', 'lab-chip', result.summary.allowed_atomic_units.toLocaleString() + ' units authorized'),
+        node('span', 'lab-chip', 'Threshold ' + (result.threshold * 100).toFixed(1) + '%'),
+      );
+      card.append(meta);
+      const charts = node('div', 'lab-charts');
+      const radar = node('div', 'lab-chart');
+      radar.append(node('h4', '', 'Peak behavior profile'));
+      drawRadar(radar, result.risk_axes);
+      const timeline = node('div', 'lab-chart');
+      timeline.append(node('h4', '', 'Risk by attempt'));
+      drawRiskTimeline(timeline, result.points, result.threshold);
+      charts.append(radar, timeline);
+      card.append(charts);
+      const attempts = node('div', 'lab-attempts');
+      for (const point of result.points) {
+        const pill = node('div', 'attempt-pill ' + (point.allowed ? 'allowed' : 'denied'));
+        const risk = point.score == null ? 'no score' : (point.score * 100).toFixed(1) + '% risk';
+        pill.append(
+          node('b', '', '#' + point.attempt + ' · ' + (point.allowed ? 'ALLOW' : 'DENY')),
+          node('small', '', (Number.isFinite(Number(point.amount)) ? Number(point.amount).toLocaleString() : point.amount) + ' units · ' + risk),
+          node('small', '', point.blocked_by ? 'Blocked by ' + point.blocked_by : 't + ' + point.offset_seconds + 's'),
+        );
+        attempts.append(pill);
+      }
+      card.append(attempts);
+      if (result.points.length) {
+        const details = node('details');
+        details.append(node('summary', '', 'Feature values by attempt'));
+        const pre = node('pre');
+        pre.textContent = JSON.stringify(result.points.map(point => ({
+          attempt: point.attempt,
+          decision: point.allowed ? 'ALLOW' : 'DENY',
+          score: point.score,
+          blocked_by: point.blocked_by,
+          features: point.features,
+        })), null, 2);
+        details.append(pre);
+        card.append(details);
+      }
+      return row;
+    }
+
+    function renderBehaviorResults() {
+      const expanded = new Set([...behaviorResults.querySelectorAll('details[open][data-case-id]')].map(item => item.dataset.caseId));
+      behaviorResults.replaceChildren();
+      for (const scenario of behaviorScenarios) {
+        const result = behaviorRuns.get(scenario.scenario_id);
+        if (result) {
+          const row = renderBehaviorResult(result);
+          row.open = expanded.has(scenario.scenario_id);
+          behaviorResults.append(row);
+        }
+      }
+      renderBehaviorOverview();
+    }
+
+    async function loadBehaviorScenarios() {
+      try {
+        const response = await fetch('/behavior-lab/scenarios');
+        if (!response.ok) throw new Error('Behavior case catalog returned HTTP ' + response.status);
+        behaviorScenarios = (await response.json()).scenarios;
+        behaviorCards.replaceChildren();
+        for (const scenario of behaviorScenarios) {
+          const card = node('article', 'scenario-card');
+          card.append(
+            node('h3', '', scenario.title),
+            node('div', 'scenario-id', scenario.scenario_id),
+            node('p', 'note', scenario.description),
+          );
+          const runButton = node('button', 'secondary', 'Run behavior case');
+          runButton.type = 'button';
+          runButton.addEventListener('click', () => runBehaviorCase(scenario));
+          card.append(runButton);
+          behaviorCards.append(card);
+        }
+        behaviorStatus.textContent = behaviorScenarios.length + ' behavior cases ready';
+        renderBehaviorOverview();
+      } catch (error) {
+        behaviorStatus.textContent = 'Could not load behavior cases: ' + error.message;
+      }
+    }
+
+    async function runBehaviorCase(scenario) {
+      behaviorStatus.textContent = 'Running ' + scenario.title + '…';
+      try {
+        const response = await fetch('/behavior-lab/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario_id: scenario.scenario_id }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || ('HTTP ' + response.status));
+        behaviorRuns.set(scenario.scenario_id, result);
+        renderBehaviorResults();
+        behaviorStatus.textContent = scenario.title + ' finished · ' + (result.summary.model_blocks ? 'behavior flagged' : 'no model block');
+      } catch (error) {
+        behaviorStatus.textContent = 'Could not run ' + scenario.title + ': ' + error.message;
+      }
+    }
+
+    runAllBehaviorButton.addEventListener('click', async () => {
+      if (behaviorBusy) return;
+      behaviorBusy = true;
+      runAllBehaviorButton.disabled = true;
+      behaviorRuns.clear();
+      renderBehaviorResults();
+      for (const scenario of behaviorScenarios) await runBehaviorCase(scenario);
+      behaviorBusy = false;
+      runAllBehaviorButton.disabled = false;
+      behaviorStatus.textContent = 'All behavior attack profiles finished';
+    });
+    loadBehaviorScenarios();
   </script>
 </body>
 </html>
