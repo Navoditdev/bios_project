@@ -1,218 +1,178 @@
-# AI Agent x402 Wallet Guard — Hackathon Project
+# x402 Red/Blue: AI Agent Payment Guard
 
-## Project context for coding agents
+A local prototype for the **x402 Red/Blue** hackathon: guard an AI agent's
+crypto wallet against overpayment and wrong-party offers, then run the same
+attacks against other teams' guards.
 
-For the team's shared statement of the goal, threat boundary, and current
-prototype status, see [HACKATHON_BRIEF.md](HACKATHON_BRIEF.md).
+The central security decision belongs on the payer side. The agent compares an
+untrusted x402 offer with trusted spending policy **before the SDK can call the
+signer**. A separate resource-server guard checks a submitted mock payment; it
+does not replace payer-side protection.
 
-This project explores how to protect an AI agent's crypto wallet when it pays
-for resources using the x402 payment protocol. The target threats are payments
-that exceed the agent's intended price and payments sent to the wrong recipient
-(or use the wrong token or network). The hackathon also aims to test and compare
-other teams' payment guards with adversarial offers.
+## Current state
 
-Think of the project as a **payment-guard red-team lab**: construct realistic
-x402 payment flows, apply attacks to the offer or payment, run a guard, and make
-the outcome and reason understandable. The eventual security decision should
-be made on the payer side, against the agent's spending policy, before the
-agent signs or submits a payment.
+This repository provides:
 
-### Trust boundary
+- A deterministic payer policy for payment amount, recipient, network, asset,
+  scheme, requested resource, offer shape, and rolling spend budgets.
+- An in-memory ledger that atomically reserves spend before signing, then
+  settles or releases that reservation after the mock response.
+- A local x402 v2 flow using the official Python SDK and a placeholder signer.
+- A browser demo for offer tampering and a seven-case decision-only attack suite.
+- A CLI and `POST /evaluate` contract for repeatable local and peer guard
+  evaluations.
 
-There are two different places a guard can sit:
+There is no LLM-driven agent, private key, real signature, facilitator, or
+on-chain settlement in this prototype. The local ledger resets when the server
+process restarts and is not shared across processes. See
+[HACKATHON_BRIEF.md](HACKATHON_BRIEF.md) for shared team context and
+[CROSS_TEAM_TESTING.md](CROSS_TEAM_TESTING.md) for the peer testing contract.
 
-- **Payer-side guard (the project goal):** checks an untrusted x402 offer
-  against the agent's policy before signing. Examples include a maximum amount,
-  an approved recipient, and an approved token and network.
-- **Resource-server guard (also retained in this prototype):** checks a
-  submitted payment against the server's own configured offer before serving a
-  resource.
+## Policy under test
 
-These checks solve related but different problems. A server checking that it
-received the amount it requested does not prove that the offer was safe for the
-AI agent to accept. Keep this distinction clear when extending the code or
-describing results.
+| Rule | Current demo setting |
+| --- | --- |
+| Maximum per payment | 10,000 atomic units (0.01 USDC), inclusive |
+| Rolling 1-hour budget | 10,000 atomic units |
+| Rolling 24-hour budget | 30,000 atomic units |
+| Recipient | `0x209693Bc6afc0C5328bA36FaF03C514EF312287C` only |
+| Network | Base Sepolia (`eip155:84532`) |
+| Asset | Base Sepolia USDC (`0x036CbD53842c5426634e7929541eC2318f3dCF7e`) |
+| Scheme and offer shape | `exact`; exactly one accepted option |
+| Invalid or ambiguous offers | Deny before signing |
 
-### Current prototype
+The x402 offer cannot change the payer's policy. The budgets count pending
+reservations as well as settled mock payments. The ledger is thread-safe within
+one Python process, but it is not durable storage.
 
-The Python prototype implements a local x402 v2 HTTP round trip with a payer-side
-decision gate:
+## Start the local demo
 
-1. The server returns HTTP 402 with a `PAYMENT-REQUIRED` challenge.
-2. `client.py` parses the challenge. The local red-team demo can alter amount,
-   recipient (`payTo`), token asset, or network before the payer agent evaluates
-   the offer.
-3. `DeterministicPaymentAgent` compares the offer with its own trusted policy.
-   A denied offer never reaches the x402 SDK signer and no payment retry is sent.
-4. If payer policy allows the offer, the x402 SDK builds an EIP-3009 payload
-   using the clearly fake `MockEvmSigner`.
-5. The resource server's separate `PaymentGuard` checks the payment it receives
-   against its own configured terms. This server-side check does not replace
-   payer-side wallet protection.
-6. The demo shows the payer decision, whether signing occurred, the retry, and
-   any server-side result.
-
-Relevant files:
-
-- `payment_guard.py` — explicit server-side authorization checks and decision
-  details.
-- `payer_agent.py` — deterministic payer policy that gates the SDK signing call.
-- `server.py` — local x402 resource server and interactive red-team demo.
-- `mock_pay.py` — official x402 SDK flow with a fake signer and offer-tampering
-  scenarios.
-- `client.py` — parses and structurally validates the x402 challenge.
-- `attack_suite.py`, `cross_team_test.py`, and `CROSS_TEAM_TESTING.md` — stable
-  shared scenarios, a decision-only peer API, and the cross-team CLI workflow.
-- `cross_team_gui.html` — browser view for running the suite against the local
-  payer guard and reviewing checks and outcomes.
-- `test_payer_agent.py`, `test_payment_guard.py`, `test_server.py`, and
-  `test_cross_team.py` — tests for policy, the resource-server guard, local
-  protocol flow, and the cross-team dry-run API/runner.
-
-### Guidance for future changes
-
-- Keep payer policy checks distinct from server-side payment verification.
-  The central product direction is to prevent an agent from signing a payment
-  that violates its own policy, even if the offer is validly formatted.
-- Treat payment challenges and all fields supplied by remote services as
-  untrusted input. Do not let a challenge itself define the agent's limits or
-  trusted recipients.
-- Make attacks and guard decisions observable: show what the agent was offered,
-  what policy applied, which checks passed or failed, and whether signing or
-  payment submission was stopped.
-- Design the red-team interface so different teams' guards can be evaluated
-  against the same normal and adversarial scenarios, with comparable outcomes.
-- Preserve the local mock's safety boundary. It uses no private key, does not
-  verify a real ECDSA signature, and does not settle a transaction. Do not
-  present it as wallet protection or production payment verification.
-
-## Local x402 prototype
-
-This is a local x402 v2 HTTP prototype. The resource server is Python, and the
-mock payer uses the official x402 Python SDK (`x402[evm]` 2.26.0). `/paid`
-returns `402 Payment Required` with `PAYMENT-REQUIRED`; the mock payer parses
-that challenge, creates an SDK payment payload, and retries with
-`PAYMENT-SIGNATURE`.
-
-## Run
+Requires Python 3.10 or later and [uv](https://docs.astral.sh/uv/).
 
 ```sh
 uv sync
 .venv/bin/python server.py
 ```
 
-Then, from another terminal:
+With the server running, open:
+
+- [Payment and attack demo](http://127.0.0.1:8402/demo) — inspect the mock
+  payment flow, change offer fields, and run the seven decision-only cases.
+- [Standalone attack-suite page](http://127.0.0.1:8402/cross-team) — run the
+  shared cases and inspect each guard decision.
+
+Keep the server terminal open while using either page. `127.0.0.1` is this
+computer; no deployed site or wallet is required. The payment-flow demo uses a
+mock signer and transfers no funds. The seven-case suite calls only the
+`/evaluate` decision endpoint and never signs or submits payments.
+
+For controlled peer testing on a network you manage, bind to a reachable
+interface:
 
 ```sh
-curl -i http://127.0.0.1:8402/paid
+HOST=0.0.0.0 PORT=8402 .venv/bin/python server.py
 ```
 
-To make a client request and parse the x402 v2 challenge:
+The peer endpoint has no authentication. Do not expose it to the public
+internet.
+
+## Run from the command line
+
+With the server running, inspect the x402 challenge without signing:
 
 ```sh
 .venv/bin/python client.py
 ```
 
-The client prints the decoded `PAYMENT-REQUIRED` object and its accepted
-payment option. It does not sign or submit a payment.
-
-To run the full SDK mock payment (server must be running in another terminal):
+Run one mock payment flow:
 
 ```sh
 .venv/bin/python mock_pay.py
 ```
 
-For the red-team GUI, open [http://127.0.0.1:8402/demo](http://127.0.0.1:8402/demo).
-Select a field, edit its replacement value, and click **Run this scenario**.
-Try the baseline first, then change the amount, recipient, asset, and network.
-The page reports whether the payer guard allowed the offer, whether the mock
-signer was called, whether a retry was sent, the reason for a denial, and the
-resource server's separate result. A plain-language summary appears above the
-collapsible **Technical details (JSON)** section. `/health` reports whether the
-server guard is active.
-
-**Local demo:** [http://127.0.0.1:8402/demo](http://127.0.0.1:8402/demo)
-
-Open the shared attack-suite GUI at
-[http://127.0.0.1:8402/cross-team](http://127.0.0.1:8402/cross-team). Click
-**Run full suite** to exercise the local payer guard and review the expected
-and actual decisions, failed checks, and denial reasons. This page uses the
-decision-only endpoint and does not sign or submit payments.
-
-## Cross-team dry-run guard evaluation
-
-With the local server running, its decision-only peer endpoint is
-`POST http://127.0.0.1:8402/evaluate`. Run the shared suite against the
-configured local payer policy with:
+Run the fixed suite directly against this project's payer policy (no server
+required):
 
 ```sh
 .venv/bin/python cross_team_test.py --local
 ```
 
-To run the same suite against another team's endpoint:
+Run it against another team's decision-only endpoint:
 
 ```sh
-.venv/bin/python cross_team_test.py --endpoint http://PEER_HOST:PORT/evaluate
+.venv/bin/python cross_team_test.py \
+  --endpoint http://PEER_HOST:PORT/evaluate
 ```
 
-The runner sends only a scenario ID and x402 offer. It never requests or sends
-a wallet key and does not call a signer or submit payment. See
-[CROSS_TEAM_TESTING.md](CROSS_TEAM_TESTING.md) for shared policy values, JSON
-request/response shapes, expected scenarios, and error behavior.
+The suite checks a valid baseline, overpayment, wrong-party recipient,
+repeated valid calls, malformed amount, missing payment options, and ambiguous
+options. The repeated-call scenario sends three valid 10,000-unit offers
+against one fresh hourly budget; the expected result is `[true, false, false]`.
+A peer response that denies every call does not pass that scenario. See
+[CROSS_TEAM_TESTING.md](CROSS_TEAM_TESTING.md) for the request and response
+contract.
 
-## How the mock signing works
+## HTTP routes
 
-The official SDK's `ExactEvmScheme` constructs an EIP-3009
-`TransferWithAuthorization` using the advertised payer, recipient, amount,
-validity window, nonce, and Base Sepolia USDC EIP-712 domain. It calls the
-`ClientEvmSigner.sign_typed_data(domain, types, primary_type, message)` method.
-`MockEvmSigner` implements that SDK interface, records the typed-data request,
-and returns the obvious placeholder bytes `MOCK-ONLY-NOT-A-REAL-ECDSA-SIGNATURE`.
-There is no private key and no real cryptographic signature. The SDK encodes
-the resulting payload into the standard Base64 `PAYMENT-SIGNATURE` header.
+| Route | Purpose |
+| --- | --- |
+| `GET /paid` | Returns an x402 v2 challenge or the mock resource |
+| `GET /demo` | Payment-flow demo and decision-only case suite |
+| `GET /demo/run` | Runs one mock payment-flow demonstration |
+| `GET /cross-team` | Standalone shared attack-suite page |
+| `GET /cross-team/scenarios` | Returns scenario metadata and offer fixtures |
+| `POST /evaluate` | Evaluates an offer without signing or paying |
+| `GET /health` | Local server health check |
 
-The payer agent runs before `ExactEvmScheme` is constructed. Its default trusted
-policy allows at most `10000` atomic units, the configured demo recipient, Base
-Sepolia (`eip155:84532`), and the Base Sepolia USDC asset. The 402 offer cannot
-change these limits. A deterministic policy denial means zero signer calls and
-no retry request.
+`POST /evaluate` requires JSON with `scenario_id` and `offer`. It rejects
+attempts to send policy settings. For `multiple_calls`, `offer` is an array; the
+response includes aggregate `authorized` and one boolean per offer in
+`call_results`. The endpoint evaluates against a fresh in-memory ledger for
+each burst request.
 
-The local server checks that the terms match and that the signature field is
-exactly the mock marker. This only verifies that the SDK created and transported
-the expected shape. It does not verify an ECDSA signature or contact a
-facilitator. The response labels the transaction `mock-not-settled`; no USDC is
-transferred, including on Base Sepolia.
+## Configuration
 
-`mock_pay.py` connects `client.py`'s HTTP 402 parser, a red-team challenge
-mutation, `payer_agent.py`, the official x402 SDK mock signer, and the resource
-server in one request flow. The mutation happens after parsing and before payer
-policy evaluation. This simulates an attacker changing the 402 requirements in
-transit; it does not modify the server's original offer.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `HOST` | `127.0.0.1` | HTTP server bind address |
+| `PORT` | `8402` | HTTP server port |
+| `X402_PAY_TO` | Demo recipient above | Recipient advertised by `/paid` |
+| `X402_AMOUNT` | `10000` | Amount advertised by `/paid`, in atomic units |
 
-`payer_agent.py` is the wallet-protection decision point in this prototype. Its
-policy is configured separately from the HTTP offer and is evaluated before
-signing. `payment_guard.py` remains a resource-server validation example: it
-binds the received payload to the requested resource and checks the server's
-scheme/network/token/amount/payee, payer allowlist, authorization time window,
-nonce format/reuse, and mock signature marker. Its in-memory replay list clears
-when the server restarts. Do not describe this server-side validation as payer
-wallet protection.
+Changing the server's advertised offer does not change the independently
+configured payer policy in `payer_agent.py`.
 
-The challenge advertises Base Sepolia USDC for `0.01 USDC` (`10000` atomic
-units). Set `X402_PAY_TO` to a receiving address and `X402_AMOUNT` to change
-the advertised terms. `HOST` and `PORT` control the listener.
+## Project layout
 
-## Scope
+| File | Responsibility |
+| --- | --- |
+| `payer_agent.py` | Trusted payer policy, rolling budgets, and pre-signing gate |
+| `payment_guard.py` | Resource-server mock checks and nonce replay protection |
+| `server.py` | HTTP routes, mock resource server, and dry-run evaluation API |
+| `mock_pay.py` | SDK payment flow and placeholder signer |
+| `demo.html` | Combined payment-flow and decision-only browser demo |
+| `cross_team_gui.html` | Standalone shared attack-suite interface |
+| `attack_suite.py` | Stable shared scenario definitions and fixtures |
+| `cross_team_test.py` | Local and peer suite runner |
+| `client.py` | x402 v2 challenge parsing and validation |
+| `test_*.py` | Unit and HTTP behavior tests |
+| `HACKATHON_BRIEF.md` | Shared project and agent context |
+| `CROSS_TEAM_TESTING.md` | Shared policy, scenarios, and peer API contract |
 
-The protocol headers and payload shape follow the x402 v2 HTTP transport.
-Mock signature checking and settlement are not real payment verification.
-This prototype is for local protocol experiments only and must not protect real
-resources.
+## Scope and limitations
 
-For a real x402 integration, replace the simulation check with the official
-x402 server SDK and a supported facilitator configured for the chosen network.
+The placeholder signer has no private key and returns bytes that are not a
+valid ECDSA signature. The resource server accepts only the local mock marker;
+it does not verify a real signature, contact a facilitator, or settle a
+transaction. The mock receipt uses the transaction marker
+`mock-not-settled`. No USDC is transferred, including on Base Sepolia.
 
-## Test
+The project demonstrates pre-signing policy control and dry-run guard
+comparison. It is not production wallet protection. Production use would
+require a real wallet boundary, durable shared budget storage, settlement
+reconciliation, and authenticated peer evaluation.
+
+## Tests
 
 ```sh
 .venv/bin/python -m unittest -v

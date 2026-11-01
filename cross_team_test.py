@@ -20,6 +20,30 @@ from payer_agent import DeterministicPaymentAgent
 def evaluate_local(scenario_id: str, offer: Any) -> dict[str, Any]:
     """Evaluate against this process's trusted default policy, without signing."""
     agent = DeterministicPaymentAgent()  # No signer is supplied or instantiated.
+    if scenario_id == "multiple_calls" and isinstance(offer, list):
+        call_decisions = [
+            agent.authorize_and_reserve(call, RESOURCE_URL)[0]
+            for call in offer
+        ]
+        checks = [
+            {
+                "name": f"call_{index}.{check.name}",
+                "passed": check.passed,
+                "detail": check.detail,
+            }
+            for index, decision in enumerate(call_decisions, start=1)
+            for check in decision.checks
+        ]
+        authorized = all(decision.authorized for decision in call_decisions)
+        return {
+            "scenario_id": scenario_id,
+            "authorized": authorized,
+            "checks": checks,
+            "reasons": [check["detail"] for check in checks if not check["passed"]],
+            "call_results": [decision.authorized for decision in call_decisions],
+            "signing_attempted": False,
+            "payment_submitted": False,
+        }
     decision = agent.evaluate(offer, RESOURCE_URL)
     return {
         "scenario_id": scenario_id,
@@ -31,7 +55,12 @@ def evaluate_local(scenario_id: str, offer: Any) -> dict[str, Any]:
     }
 
 
-def evaluate_peer(endpoint: str, scenario_id: str, offer: dict[str, Any], timeout: float) -> dict[str, Any]:
+def evaluate_peer(
+    endpoint: str,
+    scenario_id: str,
+    offer: Any,
+    timeout: float,
+) -> dict[str, Any]:
     """POST only the stable scenario ID and its untrusted x402 offer."""
     body = json.dumps({"scenario_id": scenario_id, "offer": offer}).encode("utf-8")
     request = Request(
@@ -72,7 +101,10 @@ def evaluate_peer(endpoint: str, scenario_id: str, offer: dict[str, Any], timeou
         and isinstance(check.get("detail"), str)
         for check in result["checks"]
     ):
-        raise RuntimeError("peer response 'checks' must contain name, boolean passed, and detail fields")
+        raise RuntimeError(
+            "peer response 'checks' must contain name, boolean passed, "
+            "and detail fields"
+        )
     if not isinstance(result.get("reasons"), list) or not all(
         isinstance(reason, str) for reason in result["reasons"]
     ):
@@ -82,6 +114,20 @@ def evaluate_peer(endpoint: str, scenario_id: str, offer: dict[str, Any], timeou
             raise RuntimeError(f"peer response is missing boolean '{flag}'")
         if result[flag]:
             raise RuntimeError(f"peer dry-run violated contract: {flag} must be false")
+    if scenario_id == "multiple_calls":
+        call_results = result.get("call_results")
+        if (
+            not isinstance(call_results, list)
+            or len(call_results) != len(offer)
+            or not all(type(allowed) is bool for allowed in call_results)
+        ):
+            raise RuntimeError(
+                "peer response 'call_results' must contain one boolean per offer"
+            )
+        if result["authorized"] is not all(call_results):
+            raise RuntimeError(
+                "peer response 'authorized' must match the aggregate call_results"
+            )
     return result
 
 
@@ -117,8 +163,13 @@ def run_suite(endpoint: str | None = None, timeout: float = 5.0) -> dict[str, An
             result["signing_attempted"] = decision["signing_attempted"]
             result["payment_submitted"] = decision["payment_submitted"]
             result["passed"] = decision["authorized"] is scenario.expected_authorized
+            if scenario.scenario_id == "multiple_calls":
+                result["call_results"] = decision["call_results"]
+                result["passed"] = decision["call_results"] == [True, False, False]
             result["attack_succeeded"] = bool(
-                scenario.attack_class and scenario.expected_authorized is False and decision["authorized"]
+                scenario.attack_class
+                and scenario.expected_authorized is False
+                and decision["authorized"]
             )
         except TimeoutError as error:
             result["error"] = str(error)
@@ -135,8 +186,21 @@ def run_suite(endpoint: str | None = None, timeout: float = 5.0) -> dict[str, An
         "results": results,
         "summary": {
             "baseline_passed": baseline["passed"],
-            "overpayment_blocked": next(r["actual"] == "deny" for r in attacks if r["scenario_id"] == "overpayment"),
-            "wrong_party_blocked": next(r["actual"] == "deny" for r in attacks if r["scenario_id"] == "wrong_party"),
+            "overpayment_blocked": next(
+                r["actual"] == "deny"
+                for r in attacks
+                if r["scenario_id"] == "overpayment"
+            ),
+            "wrong_party_blocked": next(
+                r["actual"] == "deny"
+                for r in attacks
+                if r["scenario_id"] == "wrong_party"
+            ),
+            "multiple_calls_blocked": next(
+                r["actual"] == "deny"
+                for r in attacks
+                if r["scenario_id"] == "multiple_calls"
+            ),
             "attacks_succeeded": [r["scenario_id"] for r in attacks if r["attack_succeeded"]],
             "all_scenarios_passed": all(result["passed"] for result in results),
         },
@@ -146,9 +210,21 @@ def run_suite(endpoint: str | None = None, timeout: float = 5.0) -> dict[str, An
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     target = parser.add_mutually_exclusive_group()
-    target.add_argument("--local", action="store_true", help="run against the local payer policy (default)")
-    target.add_argument("--endpoint", help="peer dry-run endpoint URL, e.g. http://127.0.0.1:8402/evaluate")
-    parser.add_argument("--timeout", type=float, default=5.0, help="per-scenario peer request timeout in seconds")
+    target.add_argument(
+        "--local",
+        action="store_true",
+        help="run against the local payer policy (default)",
+    )
+    target.add_argument(
+        "--endpoint",
+        help="peer dry-run endpoint URL, e.g. http://127.0.0.1:8402/evaluate",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=5.0,
+        help="per-scenario peer request timeout in seconds",
+    )
     args = parser.parse_args(argv)
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
@@ -158,8 +234,18 @@ def main(argv: list[str] | None = None) -> int:
     summary = report["summary"]
     print("\nSummary:")
     print(f"  Baseline passed: {'yes' if summary['baseline_passed'] else 'NO'}")
-    print(f"  Overpayment blocked: {'yes' if summary['overpayment_blocked'] else 'NO / endpoint error'}")
-    print(f"  Wrong-party blocked: {'yes' if summary['wrong_party_blocked'] else 'NO / endpoint error'}")
+    print(
+        "  Overpayment blocked: "
+        f"{'yes' if summary['overpayment_blocked'] else 'NO / endpoint error'}"
+    )
+    print(
+        "  Wrong-party blocked: "
+        f"{'yes' if summary['wrong_party_blocked'] else 'NO / endpoint error'}"
+    )
+    print(
+        "  Repeated-call burst blocked: "
+        f"{'yes' if summary['multiple_calls_blocked'] else 'NO / endpoint error'}"
+    )
     print(f"  All scenarios passed: {'yes' if summary['all_scenarios_passed'] else 'NO'}")
     return 0 if summary["all_scenarios_passed"] else 1
 

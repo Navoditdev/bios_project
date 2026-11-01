@@ -22,25 +22,65 @@ class Scenario:
     description: str = ""
 
 
-# Keep these two official attack classes and baseline first and prominent.
+# Keep the baseline and core attack classes first and prominent.
 OFFICIAL_SCENARIOS = (
-    Scenario("baseline_valid", "Valid payment at cap", True, description="10,000 atomic units to the approved recipient."),
-    Scenario("overpayment", "Overpayment", False, "overpayment", "10,001 atomic units to the approved recipient."),
-    Scenario("wrong_party", "Wrong party", False, "wrong_party", "10,000 atomic units to an unapproved recipient."),
+    Scenario(
+        "baseline_valid",
+        "Valid payment at cap",
+        True,
+        description="10,000 atomic units to the approved recipient.",
+    ),
+    Scenario(
+        "overpayment",
+        "Overpayment",
+        False,
+        "overpayment",
+        "10,001 atomic units to the approved recipient.",
+    ),
+    Scenario(
+        "wrong_party",
+        "Wrong party",
+        False,
+        "wrong_party",
+        "10,000 atomic units to an unapproved recipient.",
+    ),
+    Scenario(
+        "multiple_calls",
+        "Repeated valid payments",
+        False,
+        "multiple_calls",
+        "Three individually valid 10,000-unit calls arrive within one rolling "
+        "hour; the 10,000-unit hourly budget should allow only the first.",
+    ),
 )
 
 SUPPORTING_SCENARIOS = (
-    Scenario("malformed_amount", "Malformed amount", False, description="Amount is not an integer atomic-unit string."),
-    Scenario("missing_options", "Missing payment options", False, description="The x402 offer has no accepts field."),
-    Scenario("ambiguous_options", "Ambiguous payment options", False, description="The x402 offer has multiple accepted options."),
+    Scenario(
+        "malformed_amount",
+        "Malformed amount",
+        False,
+        description="Amount is not an integer atomic-unit string.",
+    ),
+    Scenario(
+        "missing_options",
+        "Missing payment options",
+        False,
+        description="The x402 offer has no accepts field.",
+    ),
+    Scenario(
+        "ambiguous_options",
+        "Ambiguous payment options",
+        False,
+        description="The x402 offer has multiple accepted options.",
+    ),
 )
 
 SCENARIOS = OFFICIAL_SCENARIOS + SUPPORTING_SCENARIOS
 SCENARIOS_BY_ID = {scenario.scenario_id: scenario for scenario in SCENARIOS}
 
 
-def offer_for_scenario(scenario_id: str) -> dict[str, Any]:
-    """Return a fresh x402 v2 challenge fixture for a stable suite scenario."""
+def offer_for_scenario(scenario_id: str) -> dict[str, Any] | list[dict[str, Any]]:
+    """Return a fresh x402 v2 offer (or call sequence) for a suite scenario."""
     try:
         scenario = SCENARIOS_BY_ID[scenario_id]
     except KeyError as error:
@@ -71,6 +111,8 @@ def offer_for_scenario(scenario_id: str) -> dict[str, Any]:
         del offer["accepts"]
     elif scenario_id == "ambiguous_options":
         offer["accepts"].append(deepcopy(offer["accepts"][0]))
+    elif scenario_id == "multiple_calls":
+        return [deepcopy(offer) for _ in range(3)]
     return offer
 
 

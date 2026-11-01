@@ -128,7 +128,9 @@ class DryRunEndpointTests(unittest.TestCase):
             [item["scenario_id"] for item in manifest["scenarios"]],
             [scenario.scenario_id for scenario in SCENARIOS],
         )
-        self.assertTrue(all(isinstance(item["offer"], dict) for item in manifest["scenarios"]))
+        self.assertTrue(
+            all(isinstance(item["offer"], (dict, list)) for item in manifest["scenarios"])
+        )
 
     def test_endpoint_rejects_untrusted_policy_fields(self):
         status, result = self.post(

@@ -27,11 +27,20 @@ The official cases are stable and intentionally prominent:
 | `baseline_valid` | 10,000 to the approved recipient | Allow |
 | `overpayment` | 10,001 to the approved recipient | Deny |
 | `wrong_party` | 10,000 to `0x0000000000000000000000000000000000000001` | Deny |
+| `multiple_calls` | Three valid 10,000-unit offers in one burst | First allow; later calls denied by rolling budget |
 
 Supporting cases check `malformed_amount`, `missing_options`, and
 `ambiguous_options` (multiple accepted payment options). A policy-violating
 offer counts as an attack success only when the guard allows it. An offer
 change that remains within policy is not an attack success.
+
+The `multiple_calls` adversarial case sends an array of three valid offers in a
+single `/evaluate` request. A compatible endpoint evaluates them in order
+against one fresh rolling ledger and returns `authorized: false` if any call is
+denied. Its `checks` names are prefixed with `call_1.`, `call_2.`, and so on;
+`call_results` reports each individual decision. This models a burst without
+signing or submitting payments. The default prototype budget permits the first
+10,000-unit call and denies the next two within the rolling hour.
 
 ## Start this project's local server and runner
 
@@ -60,7 +69,8 @@ status 1 if any expectation fails or the endpoint errors. Adjust the timeout
 with `--timeout SECONDS`. The JSON report includes each expectation, actual
 `allow`/`deny`, checks, reasons, errors/timeouts, and an attack-success
 classification. The summary calls out baseline pass, overpayment block, and
-wrong-party block separately.
+wrong-party block separately. For `multiple_calls`, it also checks the exact
+sequence `[true, false, false]`; denying every call does not count as a pass.
 
 ## Dry-run endpoint contract
 

@@ -102,7 +102,12 @@ class PaymentGuard:
         # looking up nested values so malformed JSON is a clean DENY, not a
         # server exception.
         is_object = isinstance(payment, dict)
-        check("payload_object", is_object, "Payload is a JSON object.", "Payload must be a JSON object.")
+        check(
+            "payload_object",
+            is_object,
+            "Payload is a JSON object.",
+            "Payload must be a JSON object.",
+        )
         payment = payment if is_object else {}
 
         check(
@@ -175,7 +180,11 @@ class PaymentGuard:
         # Avoid numeric coercion from arbitrary objects; only decimal strings
         # and integers are accepted in the authorization body.
         value = authorization.get("value")
-        value_matches = isinstance(value, (str, int)) and not isinstance(value, bool) and str(value) == self.config.amount
+        value_matches = (
+            isinstance(value, (str, int))
+            and not isinstance(value, bool)
+            and str(value) == self.config.amount
+        )
         check(
             "authorization_amount",
             value_matches,
@@ -210,7 +219,10 @@ class PaymentGuard:
         )
 
         nonce = authorization.get("nonce")
-        nonce_is_well_formed = isinstance(nonce, str) and _NONCE_PATTERN.fullmatch(nonce) is not None
+        nonce_is_well_formed = (
+            isinstance(nonce, str)
+            and _NONCE_PATTERN.fullmatch(nonce) is not None
+        )
         check(
             "nonce_format",
             nonce_is_well_formed,
@@ -250,7 +262,10 @@ class PaymentGuard:
                 "",
             )
 
-        decision = GuardDecision(authorized=all(item.passed for item in checks), checks=tuple(checks))
+        decision = GuardDecision(
+            authorized=all(item.passed for item in checks),
+            checks=tuple(checks),
+        )
         self._last_decision = decision
         return decision
 

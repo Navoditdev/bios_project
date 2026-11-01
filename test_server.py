@@ -58,9 +58,9 @@ class X402ServerTests(unittest.TestCase):
                     "from": "0x857b06519E91e3A54538791bDbb0E22373e36b66",
                     "to": server.PAY_TO,
                     "value": server.PRICE,
-                "validAfter": "0",
-                "validBefore": str(int(time.time()) + 30),
-                "nonce": "0x" + "22" * 32,
+                    "validAfter": "0",
+                    "validBefore": str(int(time.time()) + 30),
+                    "nonce": "0x" + "22" * 32,
                 },
             },
         }

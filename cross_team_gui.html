@@ -43,7 +43,7 @@
 <body>
   <h1>x402 Guard Attack Suite</h1>
   <p class="muted">Run the shared offers against this server's configured payer-side defense and see exactly what the guard decided.</p>
-  <div class="banner"><b>Dry run only.</b> This page calls <code>POST /evaluate</code>. The guard checks each offer and returns a decision. No signer, wallet key, payment retry, or settlement is involved.</div>
+  <div class="banner"><b>Dry run only.</b> This page calls <code>POST /evaluate</code>. The repeated-calls case checks a burst against one rolling spend ledger. No signer, wallet key, payment retry, or settlement is involved.</div>
 
   <h2>Shared scenarios</h2>
   <div id="scenarios" class="scenarios"><p class="muted">Loading scenarios…</p></div>
@@ -134,10 +134,13 @@
       const baseline = getActual('baseline_valid');
       const overpayment = getActual('overpayment');
       const wrongParty = getActual('wrong_party');
+      const repeatedCalls = results.get('multiple_calls')?.decision?.call_results;
+      const repeatedCallsPassed = JSON.stringify(repeatedCalls) === '[true,false,false]';
       const metrics = [
         ['Baseline', baseline === undefined ? 'Not run' : (baseline ? 'Passed · allowed' : 'Failed · denied'), baseline === undefined ? 'neutral' : (baseline ? 'good' : 'bad')],
         ['Overpayment', overpayment === undefined ? 'Not run' : (!overpayment ? 'Blocked' : 'Attack got through'), overpayment === undefined ? 'neutral' : (!overpayment ? 'good' : 'bad')],
         ['Wrong party', wrongParty === undefined ? 'Not run' : (!wrongParty ? 'Blocked' : 'Attack got through'), wrongParty === undefined ? 'neutral' : (!wrongParty ? 'good' : 'bad')],
+        ['Repeated calls', repeatedCalls === undefined ? 'Not run' : (repeatedCallsPassed ? 'Budget enforced in order' : 'Unexpected call decisions'), repeatedCalls === undefined ? 'neutral' : (repeatedCallsPassed ? 'good' : 'bad')],
         ['Signer / payment', 'Not called · not sent', 'good'],
       ];
       for (const [label, value, color] of metrics) {
@@ -154,7 +157,9 @@
       for (const entry of ordered) {
         const { scenario, decision, error } = entry;
         const actual = decision ? (decision.authorized ? 'ALLOW' : 'DENY') : 'ERROR';
-        const correct = decision && decision.authorized === scenario.expected_authorized;
+        const correct = decision && (scenario.scenario_id === 'multiple_calls'
+          ? JSON.stringify(decision.call_results) === '[true,false,false]'
+          : decision.authorized === scenario.expected_authorized);
         const attackSucceeded = Boolean(scenario.attack_class && !scenario.expected_authorized && decision?.authorized);
         const card = element('article', 'result');
         const head = element('div', 'result-head');

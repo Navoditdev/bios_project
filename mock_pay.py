@@ -13,13 +13,15 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from client import parse_payment_requirements
-from payer_agent import DeterministicPaymentAgent
+from payer_agent import DeterministicPaymentAgent, InMemorySpendLedger
 from x402.http import encode_payment_signature_header
 
 
 MOCK_PAYER = "0x857b06519E91e3A54538791bDbb0E22373e36b66"
 MOCK_SIGNATURE_BYTES = b"MOCK-ONLY-NOT-A-REAL-ECDSA-SIGNATURE"
 MOCK_SIGNATURE_HEX = "0x" + MOCK_SIGNATURE_BYTES.hex()
+# Share one prototype ledger across all mock payer calls in this process.
+MOCK_PAYER_LEDGER = InMemorySpendLedger()
 
 
 def _json_safe(value: Any) -> Any:
@@ -57,7 +59,10 @@ class MockEvmSigner:
         self.last_signing_request = {
             "domain": asdict(domain) if is_dataclass(domain) else domain.model_dump(),
             "types": {
-                name: [asdict(field) if is_dataclass(field) else field.model_dump() for field in fields]
+                name: [
+                    asdict(field) if is_dataclass(field) else field.model_dump()
+                    for field in fields
+                ]
                 for name, fields in types.items()
             },
             "primary_type": primary_type,
@@ -98,7 +103,7 @@ def perform_mock_payment(
 
     signer = MockEvmSigner()
     signer.attack = {"field": attack_field, "value": attack_value} if attack_field else None
-    agent = DeterministicPaymentAgent(signer=signer)
+    agent = DeterministicPaymentAgent(signer=signer, ledger=MOCK_PAYER_LEDGER)
     challenge_header = headers.get("PAYMENT-REQUIRED")
     if not challenge_header:
         signer.payer_decision = agent.deny_malformed_offer(
@@ -123,7 +128,10 @@ def perform_mock_payment(
         return (
             402,
             {},
-            {"error": "Blocked before signing: malformed PAYMENT-REQUIRED", "paymentMode": "blocked"},
+            {
+                "error": "Blocked before signing: malformed PAYMENT-REQUIRED",
+                "paymentMode": "blocked",
+            },
             signer,
         )
 
@@ -161,12 +169,19 @@ def perform_mock_payment(
             signer,
         )
 
-    signer.last_payment_payload = payment_payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+    signer.last_payment_payload = payment_payload.model_dump(
+        mode="json", by_alias=True, exclude_none=True
+    )
     payment_header = encode_payment_signature_header(payment_payload)
 
     # A retry is only possible after payer policy allows and SDK signing runs.
     signer.retry_sent = True
     status, response_headers, body = _request(url, payment_header)
+    if agent.last_reservation_id:
+        if status == 200:
+            agent.ledger.settle(agent.last_reservation_id)
+        elif status == 402:
+            agent.ledger.release(agent.last_reservation_id)
     signer.server_guard_evaluated = True
     response_json = json.loads(body)
     printable_headers = {

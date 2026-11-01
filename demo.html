@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local x402 payment guard demo</title>
+  <style>
+    :root { color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; background: #f4f7fb; color: #152238; }
+    body { max-width: 920px; margin: 36px auto; padding: 0 20px; }
+    h1 { margin-bottom: 8px; }
+    .note { color: #5a6780; line-height: 1.5; }
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 24px 0; }
+    .step, .panel { background: white; border: 1px solid #dce4ef; border-radius: 12px; padding: 16px; }
+    .step b { display: block; color: #2463eb; margin-bottom: 6px; }
+    .summary { background: white; border: 1px solid #dce4ef; border-left: 6px solid #7d8aa0; border-radius: 12px; margin: 12px 0 20px; padding: 18px 20px; }
+    .summary.allowed { border-left-color: #16834b; }
+    .summary.blocked { border-left-color: #c63c3c; }
+    .summary h3 { margin: 0 0 10px; }
+    .summary p { line-height: 1.5; margin: 6px 0; }
+    .summary ul { line-height: 1.5; margin: 6px 0; padding-left: 22px; }
+    details { margin-top: 14px; }
+    button { background: #2463eb; border: 0; border-radius: 8px; color: white; cursor: pointer; font-size: 16px; padding: 12px 18px; }
+    button:disabled { cursor: wait; opacity: .65; }
+    #status { margin-left: 12px; color: #50617a; }
+    pre { overflow: auto; max-height: 560px; background: #111827; border-radius: 10px; color: #e5eefc; padding: 18px; line-height: 1.45; }
+    .warning { border-left: 4px solid #ed9b21; padding: 10px 14px; background: #fff7e8; border-radius: 6px; }
+    .scenario-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 16px 0; }
+    .scenario-card, .case-result { background: white; border: 1px solid #dce4ef; border-radius: 10px; padding: 14px; }
+    .scenario-card h3, .case-result h3 { margin: 0 0 6px; }
+    .scenario-card p, .case-result p { line-height: 1.45; }
+    .scenario-id { color: #5a6780; font-family: ui-monospace, monospace; font-size: 13px; }
+    .case-result { margin: 10px 0; }
+    .pass { color: #137347; } .fail { color: #b42332; }
+    .suite-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+    button.secondary { background: #e8eef8; color: #24344e; }
+    .checks { padding-left: 20px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <h1>Local x402 payment guard</h1>
+  <p class="note">Run the normal flow, or act as a red team member and alter one field in the HTTP 402 offer. The deterministic payer agent checks its own policy before it lets the x402 SDK call the signer.</p>
+  <div class="warning"><b>Mock mode:</b> the payer guard is real control flow, but the wallet is a mock signer that returns a placeholder. No private key or funds are used.</div>
+  <section class="steps" aria-label="Payer-side decision order">
+    <div class="step"><b>1 · Parse offer</b><code>client.py</code> decodes the HTTP 402 requirements.</div>
+    <div class="step"><b>2 · Payer policy</b>Agent checks the offer against its own trusted limits and allowlists.</div>
+    <div class="step"><b>3 · Sign only after ALLOW</b>Only then does the x402 SDK call the mock signer.</div>
+    <div class="step"><b>4 · Retry</b>A denied offer never sends a payment retry.</div>
+    <div class="step"><b>5 · Optional server validation</b>The resource server checks a retry only if the payer sent one.</div>
+  </section>
+  <p class="note"><b>Red-team injection point:</b> an attack may alter the parsed offer after step 1 and before step 2. It cannot change the payer's trusted policy.</p>
+  <section class="panel">
+    <label for="attack"><b>Red-team field</b></label>
+    <select id="attack">
+      <option value="">No tampering (baseline)</option>
+      <option value="amount">Change amount</option>
+      <option value="recipient">Change recipient (payTo)</option>
+      <option value="asset">Change token asset</option>
+      <option value="network">Change network</option>
+    </select>
+    <label for="value"><b>Replacement value</b></label>
+    <input id="value" value="20000" aria-label="Replacement payment requirement value">
+    <button id="run">Run this scenario</button><span id="status" role="status"></span>
+    <p class="note">Examples: amount <code>20000</code>; recipient or asset a different 0x address; network <code>eip155:8453</code>.</p>
+  </section>
+  <h2>What happened</h2>
+  <section id="summary" class="summary" aria-live="polite">
+    <h3>Ready to run</h3>
+    <p>Choose a scenario above. This summary will explain the agent's decision in plain language.</p>
+  </section>
+  <details>
+    <summary>Technical details (JSON)</summary>
+    <pre id="output">Run a scenario to see the parsed offer, payer policy checks, signer input, retry, and server-side result.</pre>
+  </details>
+  <h2>Adversarial case suite</h2>
+  <p class="note">Run the full project's decision-only cases from this page. These cases never call the signer or send a payment. The repeated-calls case submits three individually valid offers against one fresh rolling budget.</p>
+  <div class="suite-toolbar">
+    <button id="run-all-cases" type="button">Run all adversarial cases</button>
+    <span id="suite-status" role="status">Loading cases…</span>
+  </div>
+  <section id="suite-summary" class="summary" aria-live="polite"><p>Loading the local case catalog.</p></section>
+  <section id="scenario-cards" class="scenario-grid" aria-label="Adversarial cases"></section>
+  <section id="case-results" aria-live="polite"><p class="note">Run a case to see its expected and actual decision and policy checks.</p></section>
+  <details>
+    <summary>Project endpoints on this local server</summary>
+    <ul>
+      <li><code>GET /paid</code> — mock x402 resource challenge and protected resource.</li>
+      <li><code>GET /demo/run</code> — full mock signing and retry flow used by the controls above.</li>
+      <li><code>GET /cross-team/scenarios</code> — adversarial case catalog and offer fixtures.</li>
+      <li><code>POST /evaluate</code> — decision-only case evaluation, including repeated calls.</li>
+      <li><code>GET /health</code> — local server health.</li>
+    </ul>
+  </details>
+  <script>
+    const button = document.querySelector('#run');
+    const attack = document.querySelector('#attack');
+    const value = document.querySelector('#value');
+    const examples = { amount: '20000', recipient: '0x0000000000000000000000000000000000000001', asset: '0x0000000000000000000000000000000000000002', network: 'eip155:8453' };
+    attack.addEventListener('change', () => { if (examples[attack.value]) value.value = examples[attack.value]; });
+    function renderSummary(result) {
+      const box = document.querySelector('#summary');
+      box.replaceChildren();
+      const decision = result.payer_guard_decision;
+      if (!decision) {
+        box.className = 'summary blocked';
+        const title = document.createElement('h3');
+        title.textContent = 'The flow could not complete';
+        box.append(title);
+        const message = document.createElement('p');
+        message.textContent = result.error || 'The server did not return a payer decision.';
+        box.append(message);
+        return;
+      }
+
+      const changed = result.scenario && result.scenario.field;
+      const allowed = decision.authorized;
+      box.className = 'summary ' + (allowed ? 'allowed' : 'blocked');
+      const heading = document.createElement('h3');
+      heading.textContent = changed
+        ? (result.red_team_result.succeeded
+          ? 'Attack succeeded: policy-violating offer reached the signer'
+          : (allowed ? 'Offer change is policy-compliant; attack not successful' : 'Red-team offer was blocked before signing'))
+        : (allowed ? 'Baseline offer was allowed' : 'Agent policy blocked the offer');
+      box.append(heading);
+
+      const scenario = document.createElement('p');
+      scenario.textContent = changed
+        ? 'Red team changed ' + changed + ' to ' + result.scenario.value + '.'
+        : 'No offer field was changed.';
+      box.append(scenario);
+
+      const decisionLine = document.createElement('p');
+      decisionLine.textContent = allowed
+        ? 'The offer is within the agent’s trusted policy.'
+        : 'The agent denied the offer using policy stored on the payer side.';
+      box.append(decisionLine);
+
+      const signerLine = document.createElement('p');
+      signerLine.textContent = result.signing_attempted
+        ? 'Signer: called ' + result.signer_call_count + ' time(s) (mock only).'
+        : 'Signer: not called. The offer was stopped before signing.';
+      box.append(signerLine);
+
+      const retryLine = document.createElement('p');
+      retryLine.textContent = result.retry_sent
+        ? 'Payment retry: sent; resource server replied ' + result.flow[5].result + '.'
+        : 'Payment retry: not sent.';
+      box.append(retryLine);
+
+      const serverLine = document.createElement('p');
+      serverLine.textContent = result.server_guard_evaluated
+        ? 'Separate resource-server guard: ' + result.flow[6].result + '.'
+        : 'Separate resource-server guard: not reached.';
+      box.append(serverLine);
+
+      if (decision.reasons && decision.reasons.length) {
+        const why = document.createElement('p');
+        why.textContent = 'Why the payer guard denied it:';
+        box.append(why);
+        const list = document.createElement('ul');
+        for (const reason of decision.reasons) {
+          const item = document.createElement('li');
+          item.textContent = reason;
+          list.append(item);
+        }
+        box.append(list);
+      }
+      if (changed && result.red_team_result) {
+        const attack = document.createElement('p');
+        attack.textContent = 'Red-team result: ' + result.red_team_result.summary;
+        box.append(attack);
+      }
+      const caveat = document.createElement('p');
+      caveat.className = 'note';
+      caveat.textContent = 'The signer is a placeholder. This demo makes no real wallet signature and transfers no funds.';
+      box.append(caveat);
+    }
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      document.querySelector('#status').textContent = 'Running local SDK flow…';
+      try {
+        const params = new URLSearchParams();
+        if (attack.value) { params.set('attack', attack.value); params.set('value', value.value); }
+        const response = await fetch('/demo/run?' + params.toString());
+        const result = await response.json();
+        renderSummary(result);
+        document.querySelector('#output').textContent = JSON.stringify(result, null, 2);
+        const allowed = result.payer_guard_decision && result.payer_guard_decision.authorized;
+        document.querySelector('#status').textContent = allowed ? 'Payer guard ALLOWED' : (result.payer_guard_decision ? 'Payer guard DENIED' : 'Flow failed');
+      } catch (error) {
+        document.querySelector('#status').textContent = String(error);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    const scenarioRoot = document.querySelector('#scenario-cards');
+    const caseResults = document.querySelector('#case-results');
+    const suiteStatus = document.querySelector('#suite-status');
+    const suiteSummary = document.querySelector('#suite-summary');
+    const runAllCasesButton = document.querySelector('#run-all-cases');
+    let cases = [];
+    let caseDecisions = new Map();
+    let suiteBusy = false;
+
+    function node(tag, className, text) {
+      const item = document.createElement(tag);
+      if (className) item.className = className;
+      if (text !== undefined) item.textContent = text;
+      return item;
+    }
+
+    async function loadCases() {
+      try {
+        const response = await fetch('/cross-team/scenarios');
+        if (!response.ok) throw new Error(`Case catalog returned HTTP ${response.status}`);
+        const data = await response.json();
+        cases = data.scenarios;
+        scenarioRoot.replaceChildren();
+        for (const item of cases) {
+          const card = node('article', 'scenario-card');
+          card.append(
+            node('h3', '', item.title),
+            node('div', 'scenario-id', item.scenario_id),
+            node('p', 'note', item.description),
+            node('p', '', `Expected: ${item.expected_authorized ? 'ALLOW' : 'DENY'}`),
+          );
+          const runButton = node('button', 'secondary', 'Run case');
+          runButton.type = 'button';
+          runButton.addEventListener('click', () => runCase(item));
+          card.append(runButton);
+          scenarioRoot.append(card);
+        }
+        suiteStatus.textContent = `${cases.length} cases ready`;
+        suiteSummary.replaceChildren(node('p', '', 'Run one case or the full adversarial suite.'));
+      } catch (error) {
+        suiteStatus.textContent = 'Could not load cases';
+        suiteSummary.className = 'summary blocked';
+        suiteSummary.replaceChildren(node('p', '', error.message));
+      }
+    }
+
+    async function runCase(item) {
+      suiteStatus.textContent = `Running ${item.scenario_id}…`;
+      try {
+        const response = await fetch('/evaluate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scenario_id: item.scenario_id, offer: item.offer }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || `HTTP ${response.status}`);
+        if (result.signing_attempted !== false || result.payment_submitted !== false) {
+          throw new Error('The decision-only endpoint reported a payment side effect.');
+        }
+        caseDecisions.set(item.scenario_id, { item, result, error: null });
+      } catch (error) {
+        caseDecisions.set(item.scenario_id, { item, result: null, error: error.message });
+      }
+      renderCases();
+      suiteStatus.textContent = `${item.scenario_id} finished`;
+    }
+
+    function renderCases() {
+      const entries = cases.filter(item => caseDecisions.has(item.scenario_id))
+        .map(item => caseDecisions.get(item.scenario_id));
+      const passed = entries.filter(entry => {
+        if (!entry.result) return false;
+        if (entry.item.scenario_id === 'multiple_calls') {
+          return JSON.stringify(entry.result.call_results) === '[true,false,false]';
+        }
+        return entry.result.authorized === entry.item.expected_authorized;
+      }).length;
+      suiteSummary.className = 'summary';
+      suiteSummary.replaceChildren(node('p', '', `${passed} of ${entries.length} run cases matched the expected outcome (${cases.length} total).`));
+      caseResults.replaceChildren();
+      for (const entry of entries) {
+        const { item, result, error } = entry;
+        const card = node('article', 'case-result');
+        const matches = result && (item.scenario_id === 'multiple_calls'
+          ? JSON.stringify(result.call_results) === '[true,false,false]'
+          : result.authorized === item.expected_authorized);
+        card.append(node('h3', matches ? 'pass' : 'fail', `${item.title} · ${error ? 'ERROR' : (matches ? 'EXPECTED' : 'UNEXPECTED')}`));
+        card.append(node('p', '', `Expected: ${item.expected_authorized ? 'ALLOW' : 'DENY'} · Actual: ${result ? (result.authorized ? 'ALLOW' : 'DENY') : 'ERROR'}`));
+        if (error) card.append(node('p', 'fail', error));
+        if (result) {
+          if (result.call_results) {
+            card.append(node('p', '', `Calls in order: ${result.call_results.map((allowed, index) => `#${index + 1} ${allowed ? 'ALLOW' : 'DENY'}`).join(' · ')}`));
+          }
+          const checks = node('ul', 'checks');
+          for (const check of result.checks || []) {
+            checks.append(node('li', check.passed ? 'pass' : 'fail', `${check.passed ? 'PASS' : 'FAIL'} · ${check.name}: ${check.detail}`));
+          }
+          card.append(checks);
+          if (result.reasons?.length) card.append(node('p', '', `Denied because: ${result.reasons.join(' ')}`));
+          card.append(node('p', 'note', `Signer called: ${result.signing_attempted ? 'yes' : 'no'} · Payment submitted: ${result.payment_submitted ? 'yes' : 'no'}`));
+        }
+        caseResults.append(card);
+      }
+    }
+
+    runAllCasesButton.addEventListener('click', async () => {
+      if (suiteBusy) return;
+      suiteBusy = true;
+      runAllCasesButton.disabled = true;
+      caseDecisions = new Map();
+      for (const item of cases) await runCase(item);
+      suiteBusy = false;
+      runAllCasesButton.disabled = false;
+      suiteStatus.textContent = 'Full suite finished';
+    });
+    loadCases();
+  </script>
+</body>
+</html>
